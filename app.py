@@ -109,9 +109,25 @@ Textos en español, concretos y accionables. Priority: 1=baja, 2=media, 3=alta.\
 def fetch_competitors_from_url(url: str) -> list:
     """Fetches LLMs Pulse report URL and extracts Top Competitors via Claude."""
     try:
-        resp = requests.get(url, timeout=15, headers={"User-Agent": "Mozilla/5.0"})
+        resp = requests.get(url, timeout=15, headers={
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0 Safari/537.36",
+            "Accept": "text/html,application/xhtml+xml",
+            "Accept-Language": "es-ES,es;q=0.9,en;q=0.8",
+        })
         resp.raise_for_status()
-        html_chunk = resp.text[:12000]
+        html = resp.text
+
+        # Extrae el fragmento alrededor de "Top Competitors"
+        lower = html.lower()
+        idx = lower.find("top competitor")
+        if idx == -1:
+            idx = lower.find("competitor")
+        if idx == -1:
+            idx = 0
+        start = max(0, idx - 500)
+        end   = min(len(html), idx + 8000)
+        html_chunk = html[start:end]
+
         client = Anthropic(api_key=ANTHROPIC_KEY)
         response = client.messages.create(
             model="claude-haiku-4-5-20251001",
@@ -119,11 +135,11 @@ def fetch_competitors_from_url(url: str) -> list:
             messages=[{
                 "role": "user",
                 "content": (
-                    "En este HTML de un informe LLMs Pulse, localiza la sección 'Top Competitors'. "
-                    "Extrae hasta 3 competidores con su nombre exacto y descripción. "
+                    "En este fragmento HTML de un informe LLMs Pulse, localiza los competidores. "
+                    "Extrae hasta 3 con su nombre exacto y descripción. "
                     "Devuelve SOLO un array JSON, sin texto extra:\n"
                     '[{"name": "...", "desc": "..."}, ...]\n'
-                    "Si no encuentras la sección, devuelve []\n\n"
+                    "Si no encuentras competidores, devuelve []\n\n"
                     f"HTML:\n{html_chunk}"
                 ),
             }],
