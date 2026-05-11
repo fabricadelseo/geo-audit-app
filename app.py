@@ -535,8 +535,9 @@ def build_analysis_slide(s, score: int, model_name: str, hallazgos: list, diagno
         p = htb.text_frame.paragraphs[0]; p.text = h.get("title", "")[:45]
         r = p.runs[0]; r.font.size = Pt(12); r.font.bold = True; r.font.color.rgb = DARK
 
-        # Detalle (multi-línea)
-        detail_lines = h.get("detail", "").split("\\n")
+        # Detalle (multi-línea) — normalizar \n tanto literal como carácter real
+        detail_raw   = h.get("detail", "").replace("\\n", "\n")
+        detail_lines = [l.strip() for l in detail_raw.split("\n") if l.strip()]
         det_tb = s.shapes.add_textbox(Emu(TXT_L), Emu(it + 215000), Emu(TXT_W), Emu(ITEM_S - 260000))
         det_tf = det_tb.text_frame; det_tf.word_wrap = True
         for li, line in enumerate(detail_lines[:3]):
@@ -545,7 +546,8 @@ def build_analysis_slide(s, score: int, model_name: str, hallazgos: list, diagno
             else:
                 p = det_tf.add_paragraph()
             p.text = line[:90]
-            r = p.runs[0]; r.font.size = Pt(11); r.font.color.rgb = DARK
+            if p.runs:
+                r = p.runs[0]; r.font.size = Pt(11); r.font.color.rgb = DARK
 
     # Texto de prioridad al fondo
     ptb = s.shapes.add_textbox(Emu(RP_L), Emu(SH - 460000), Emu(RP_W), Emu(210000))
@@ -660,15 +662,7 @@ def generate_pptx(empresa: str, fecha: date, logo_bytes, d: dict) -> bytes:
     # Slide 1 — Portada
     s = prs.slides[0]
     set_run(s, "Text 2", empresa)
-    set_run(s, "Text 4", f"Análisis de visibilidad en LLMs · {date_str}")
-
-    # Cambiar color de Text 4 a navy
-    from pptx.dml.color import RGBColor
-    shape_t4 = find_shape(s, "Text 4")
-    if shape_t4 and hasattr(shape_t4, "text_frame"):
-        for para in shape_t4.text_frame.paragraphs:
-            for run in para.runs:
-                run.font.color.rgb = RGBColor(0x0F, 0x1B, 0x3D)
+    set_run(s, "Text 4", "")
 
     # Recuadro blanco en la franja inferior
     WHITE_BOX_H = 1000000
