@@ -570,8 +570,9 @@ with col_action:
                 st.error(e)
         else:
             # Paso 1 — Extraer competidores y recomendaciones de la URL
-            competitors_data    = []
+            competitors_data     = []
             recommendations_data = []
+            opportunities_data   = []
             if report_url.strip():
                 with st.spinner("Leyendo datos desde el informe LLMs Pulse..."):
                     report_data = fetch_report_data_from_url(report_url.strip())
