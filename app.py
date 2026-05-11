@@ -9,6 +9,7 @@ import io
 import json
 import copy
 import base64
+import requests
 import streamlit as st
 from datetime import date
 from anthropic import Anthropic
@@ -46,7 +47,10 @@ Analiza esta captura de pantalla de LLMs Pulse, herramienta de medición de visi
 
 {contexto}
 
-Extrae todos los datos numéricos visibles y genera un análisis de auditoría GEO completo y profesional en español.
+ANTES DE NADA — COMPETITORS (lee esto primero):
+Busca en la imagen una sección titulada "Top Competitors" (columna derecha, parte superior). Anota los nombres exactos de las empresas que aparecen ahí y sus descripciones en inglés. Serán empresas del mismo sector y país que la empresa auditada — nombres locales/regionales, NUNCA consultoras globales como McKinsey, Deloitte, Accenture, etc. Si no lees la sección con claridad, devuelve "competitors": []. PROHIBIDO inventar o usar conocimiento propio: solo lo que está escrito en la imagen.
+
+Ahora extrae todos los datos numéricos visibles y genera un análisis de auditoría GEO completo y profesional en español.
 
 Devuelve EXCLUSIVAMENTE un JSON válido, sin texto antes ni después:
 
@@ -58,6 +62,11 @@ Devuelve EXCLUSIVAMENTE un JSON válido, sin texto antes ni después:
   "perplexity_score": <entero 0-100>,
   "resumen": "<2-3 frases sobre el estado de visibilidad en IA con el score y el nivel>",
   "competitive_desc": "<frase corta sobre la posición competitiva en búsquedas de IA>",
+  "competitors": [
+    {{"name": "<nombre exacto leído en la imagen, sección Top Competitors>", "stars": <entero 1-5>, "desc": "<descripción leída en la imagen, traducida al español>"}},
+    {{"name": "<nombre exacto leído en la imagen, sección Top Competitors>", "stars": <entero 1-5>, "desc": "<descripción leída en la imagen, traducida al español>"}},
+    {{"name": "<nombre exacto leído en la imagen, sección Top Competitors>", "stars": <entero 1-5>, "desc": "<descripción leída en la imagen, traducida al español>"}}
+  ],
   "chatgpt_analysis": "Hallazgos:\\n• <hallazgo 1>\\n• <hallazgo 2>\\n• <hallazgo 3>\\n• <hallazgo 4>\\n\\nBrechas identificadas:\\n\\u2717 <brecha 1>\\n\\u2717 <brecha 2>\\n\\u2717 <brecha 3>",
   "gemini_analysis": "Hallazgos:\\n• <hallazgo 1>\\n• <hallazgo 2>\\n• <hallazgo 3>\\n\\nBrechas identificadas:\\n\\u2717 <brecha 1>\\n\\u2717 <brecha 2>\\n\\u2717 <brecha 3>",
   "strengths": [
@@ -87,24 +96,72 @@ Devuelve EXCLUSIVAMENTE un JSON válido, sin texto antes ni después:
   ]
 }}
 
+REGLA ESTRICTA para "competitors": Localiza en la imagen la sección llamada "Top Competitors". Contiene entre 2 y 5 empresas, cada una con su nombre y una descripción en inglés. DEBES copiar literalmente los nombres y descripciones que leas en esa sección de la imagen — NO uses conocimiento externo, NO inventes competidores, NO rellenes con empresas que no estén visibles. Si la sección no está visible con claridad en la imagen, devuelve "competitors": []. Para "stars" (1-5): estima según la descripción visible — presencia fuerte/nacional = 4-5, moderada/local = 2-3. Toma únicamente los 3 primeros que aparezcan. Las descripciones tradúcelas al español.
 Si no ves un score numérico exacto, estímalo por los indicadores visuales.
 Textos en español, concretos y accionables. Priority: 1=baja, 2=media, 3=alta.\
 """
 
 
 # ─────────────────────────────────────────────────────────────
+# FETCH COMPETITORS FROM URL
+# ─────────────────────────────────────────────────────────────
+
+def fetch_competitors_from_url(url: str) -> list:
+    """Fetches LLMs Pulse report URL and extracts Top Competitors via Claude."""
+    try:
+        resp = requests.get(url, timeout=15, headers={"User-Agent": "Mozilla/5.0"})
+        resp.raise_for_status()
+        html_chunk = resp.text[:12000]
+        client = Anthropic(api_key=ANTHROPIC_KEY)
+        response = client.messages.create(
+            model="claude-haiku-4-5-20251001",
+            max_tokens=600,
+            messages=[{
+                "role": "user",
+                "content": (
+                    "En este HTML de un informe LLMs Pulse, localiza la sección 'Top Competitors'. "
+                    "Extrae hasta 3 competidores con su nombre exacto y descripción. "
+                    "Devuelve SOLO un array JSON, sin texto extra:\n"
+                    '[{"name": "...", "desc": "..."}, ...]\n'
+                    "Si no encuentras la sección, devuelve []\n\n"
+                    f"HTML:\n{html_chunk}"
+                ),
+            }],
+        )
+        raw = response.content[0].text.strip()
+        if "```" in raw:
+            raw = raw.split("```")[1].split("```")[0].strip()
+            if raw.startswith("json"):
+                raw = raw[4:].strip()
+        return json.loads(raw)
+    except Exception:
+        return []
+
+
+# ─────────────────────────────────────────────────────────────
 # CLAUDE API
 # ─────────────────────────────────────────────────────────────
 
-def analyze_with_claude(image_bytes: bytes, empresa: str) -> dict:
+def analyze_with_claude(image_bytes: bytes, empresa: str, competitors_data: list) -> dict:
     client   = Anthropic(api_key=ANTHROPIC_KEY)
     media_type = "image/png" if image_bytes[:4] == b"\x89PNG" else "image/jpeg"
     b64      = base64.standard_b64encode(image_bytes).decode("utf-8")
     contexto = f"La empresa auditada es: {empresa.strip()}." if empresa.strip() else ""
+    if competitors_data:
+        partes = []
+        for i, c in enumerate(competitors_data, 1):
+            if isinstance(c, dict):
+                partes.append(f"{i}) {c.get('name', '')} — {c.get('desc', '')}")
+            else:
+                partes.append(f"{i}) {c}")
+        contexto += (
+            " Los competidores principales extraídos del informe LLMs Pulse son EXACTAMENTE estos "
+            f"(úsalos en el campo 'competitors' en este orden, sin inventar otros): {'; '.join(partes)}."
+        )
 
     response = client.messages.create(
         model="claude-sonnet-4-6",
-        max_tokens=3000,
+        max_tokens=4000,
         messages=[{
             "role": "user",
             "content": [
@@ -260,16 +317,29 @@ def generate_pptx(empresa: str, fecha: date, logo_bytes, d: dict) -> bytes:
         d["resumen"],
     ])
 
-    # Slide 3 — Visibilidad por modelo
+    # Slide 3 — Visibilidad por modelo (barras siempre al ancho completo del track)
+    FULL_BAR_EMU = 8229600
     s = prs.slides[2]
-    update_bar(s, "Shape 2",  gpt); set_run(s, "Text 4",  f"{gpt}/100"); set_run(s, "Text 5",  model_label(gpt, "ChatGPT"))
-    update_bar(s, "Shape 7",  gem); set_run(s, "Text 9",  f"{gem}/100"); set_run(s, "Text 10", model_label(gem, "Gemini"))
-    update_bar(s, "Shape 12", cla); set_run(s, "Text 14", f"{cla}/100"); set_run(s, "Text 15", model_label(cla, "Claude"))
-    update_bar(s, "Shape 17", per); set_run(s, "Text 19", f"{per}/100"); set_run(s, "Text 20", model_label(per, "Perplexity"))
+    for bar_name in ("Shape 2", "Shape 7", "Shape 12", "Shape 17"):
+        shape = find_shape(s, bar_name)
+        if shape:
+            shape.width = Emu(FULL_BAR_EMU)
+    set_run(s, "Text 4",  f"{gpt}/100"); set_run(s, "Text 5",  model_label(gpt, "ChatGPT"))
+    set_run(s, "Text 9",  f"{gem}/100"); set_run(s, "Text 10", model_label(gem, "Gemini"))
+    set_run(s, "Text 14", f"{cla}/100"); set_run(s, "Text 15", model_label(cla, "Claude"))
+    set_run(s, "Text 19", f"{per}/100"); set_run(s, "Text 20", model_label(per, "Perplexity"))
     set_run(s, "Text 21", f"Promedio: {avg}/100")
 
     # Slide 4 — Contexto competitivo
     s = prs.slides[3]
+    comp_map = [("Text 2", "Text 3", "Text 4"), ("Text 6", "Text 7", "Text 8"), ("Text 10", "Text 11", "Text 12")]
+    for i, (tn, sn, dn) in enumerate(comp_map):
+        comps = d.get("competitors", [])
+        if i < len(comps):
+            c = comps[i]
+            set_run(s, tn, c.get("name", ""))
+            set_run(s, sn, "⭐" * max(1, min(5, c.get("stars", 3))))
+            set_run(s, dn, c.get("desc", ""))
     set_run(s, "Text 14", empresa)
     set_run(s, "Text 15", score_stars(score))
     set_run(s, "Text 16", d["competitive_desc"])
@@ -347,7 +417,7 @@ with st.sidebar:
 
     empresa   = st.text_input("Nombre de la empresa *", placeholder="Ej: Acme Corp")
     fecha     = st.date_input("Fecha de auditoría", value=date.today())
-    logo_file = st.file_uploader("Logo de la empresa (opcional)", type=["jpg", "jpeg", "png"])
+    logo_file = st.file_uploader("Logo de la empresa (opcional)", type=["jpg", "jpeg", "png", "svg"])
     if logo_file:
         st.image(logo_file, caption="Logo cargado", use_container_width=True)
 
@@ -356,6 +426,13 @@ with st.sidebar:
         "Screenshot de LLMs Pulse *",
         type=["jpg", "jpeg", "png"],
         help="Captura de pantalla con los scores de visibilidad por modelo",
+    )
+
+    st.divider()
+    report_url = st.text_input(
+        "URL del informe LLMs Pulse (opcional)",
+        placeholder="https://llmpulse.ai/ai-visibility-report/...",
+        help="Si pegas la URL del informe, los competidores se extraen automáticamente y con precisión. Si no, Claude intentará leerlos del screenshot.",
     )
 
 
@@ -396,11 +473,21 @@ with col_action:
             for e in errors:
                 st.error(e)
         else:
-            # Paso 1 — Claude analiza la imagen
+            # Paso 1 — Extraer competidores de la URL si se proporcionó
+            competitors_data = []
+            if report_url.strip():
+                with st.spinner("Leyendo competidores desde el informe LLMs Pulse..."):
+                    competitors_data = fetch_competitors_from_url(report_url.strip())
+                    if competitors_data:
+                        st.success(f"Competidores extraídos: {', '.join(c['name'] for c in competitors_data)}")
+                    else:
+                        st.warning("No se pudieron extraer competidores de la URL. Claude los intentará leer del screenshot.")
+
+            # Paso 2 — Claude analiza la imagen
             with st.spinner("Claude analizando el screenshot..."):
                 try:
                     pulse_file.seek(0)
-                    result = analyze_with_claude(pulse_file.read(), empresa)
+                    result = analyze_with_claude(pulse_file.read(), empresa, competitors_data)
                 except Exception as exc:
                     st.error(f"Error al analizar la imagen: {exc}")
                     import traceback
@@ -417,6 +504,8 @@ with col_action:
             avg   = round((gpt + gem + cla + per) / 4)
 
             st.success(f"Análisis completado — Score global: **{score}/100**")
+            with st.expander("DEBUG: competidores extraídos por Claude"):
+                st.json(result.get("competitors", "⚠️ campo 'competitors' no encontrado"))
             m1, m2 = st.columns(2)
             m1.metric("ChatGPT", f"{gpt}/100")
             m2.metric("Gemini",  f"{gem}/100")
@@ -427,7 +516,13 @@ with col_action:
             # Paso 3 — Generar PPTX
             with st.spinner("Generando presentación..."):
                 try:
-                    logo_bytes = logo_file.getvalue() if logo_file else None
+                    if logo_file:
+                        logo_bytes = logo_file.getvalue()
+                        if logo_file.name.lower().endswith(".svg"):
+                            import cairosvg
+                            logo_bytes = cairosvg.svg2png(bytestring=logo_bytes)
+                    else:
+                        logo_bytes = None
                     pptx_bytes = generate_pptx(empresa.strip(), fecha, logo_bytes, result)
                     filename   = f"Auditoria_GEO_{empresa.strip().replace(' ', '_')}_{fecha.strftime('%Y%m')}.pptx"
                 except Exception as exc:
