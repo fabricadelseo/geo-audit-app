@@ -82,17 +82,17 @@ Devuelve EXCLUSIVAMENTE un JSON válido, sin texto antes ni después:
     "<oportunidad de mejora 4>"
   ],
   "recommendations": [
-    {{"title": "<acción concreta 1>", "desc": "<detalle + plazo estimado>", "priority": 3}},
-    {{"title": "<acción concreta 2>", "desc": "<detalle + plazo estimado>", "priority": 3}},
-    {{"title": "<acción concreta 3>", "desc": "<detalle + plazo estimado>", "priority": 3}},
-    {{"title": "<acción concreta 4>", "desc": "<detalle + plazo estimado>", "priority": 2}},
-    {{"title": "<acción concreta 5>", "desc": "<detalle + plazo estimado>", "priority": 2}}
+    {{"title": "<acción concreta 1, máx 50 caracteres>", "desc": "<1 frase con acción + plazo, máx 90 caracteres>", "priority": 3}},
+    {{"title": "<acción concreta 2, máx 50 caracteres>", "desc": "<1 frase con acción + plazo, máx 90 caracteres>", "priority": 3}},
+    {{"title": "<acción concreta 3, máx 50 caracteres>", "desc": "<1 frase con acción + plazo, máx 90 caracteres>", "priority": 3}},
+    {{"title": "<acción concreta 4, máx 50 caracteres>", "desc": "<1 frase con acción + plazo, máx 90 caracteres>", "priority": 2}},
+    {{"title": "<acción concreta 5, máx 50 caracteres>", "desc": "<1 frase con acción + plazo, máx 90 caracteres>", "priority": 2}}
   ],
   "steps": [
-    {{"title": "Revisar hallazgos", "desc": "Validar análisis y contexto competitivo con el equipo"}},
-    {{"title": "Priorizar iniciativas", "desc": "Decidir qué cambios implementar en las próximas semanas"}},
-    {{"title": "Implementar Quick Wins", "desc": "<2-3 acciones inmediatas específicas para esta empresa>"}},
-    {{"title": "Monitorear progreso", "desc": "Re-auditar en 60-90 días para medir mejora de visibilidad"}}
+    {{"title": "Revisar hallazgos", "desc": "<1 frase, máx 90 caracteres>"}},
+    {{"title": "Priorizar iniciativas", "desc": "<1 frase, máx 90 caracteres>"}},
+    {{"title": "Implementar Quick Wins", "desc": "<1 frase con 2-3 acciones clave, máx 90 caracteres>"}},
+    {{"title": "Monitorear progreso", "desc": "<1 frase, máx 90 caracteres>"}}
   ]
 }}
 
@@ -333,13 +333,12 @@ def generate_pptx(empresa: str, fecha: date, logo_bytes, d: dict) -> bytes:
         d["resumen"],
     ])
 
-    # Slide 3 — Visibilidad por modelo (barras siempre al ancho completo del track)
-    FULL_BAR_EMU = 8229600
+    # Slide 3 — Visibilidad por modelo
     s = prs.slides[2]
-    for bar_name in ("Shape 2", "Shape 7", "Shape 12", "Shape 17"):
-        shape = find_shape(s, bar_name)
-        if shape:
-            shape.width = Emu(FULL_BAR_EMU)
+    update_bar(s, "Shape 2",  gpt)
+    update_bar(s, "Shape 7",  gem)
+    update_bar(s, "Shape 12", cla)
+    update_bar(s, "Shape 17", per)
     set_run(s, "Text 4",  f"{gpt}/100"); set_run(s, "Text 5",  model_label(gpt, "ChatGPT"))
     set_run(s, "Text 9",  f"{gem}/100"); set_run(s, "Text 10", model_label(gem, "Gemini"))
     set_run(s, "Text 14", f"{cla}/100"); set_run(s, "Text 15", model_label(cla, "Claude"))
@@ -396,8 +395,8 @@ def generate_pptx(empresa: str, fecha: date, logo_bytes, d: dict) -> bytes:
     for i, (tn, dn, sn) in enumerate(rec_map):
         if i < len(d["recommendations"]):
             r = d["recommendations"][i]
-            if r.get("title"): set_run(s, tn, r["title"])
-            if r.get("desc"):  set_run(s, dn, r["desc"])
+            if r.get("title"): set_run(s, tn, r["title"][:55])
+            if r.get("desc"):  set_run(s, dn, r["desc"][:95])
             set_run(s, sn, "⭐" * max(1, r.get("priority", 3)))
 
     # Slide 10 — Próximos pasos
@@ -405,8 +404,8 @@ def generate_pptx(empresa: str, fecha: date, logo_bytes, d: dict) -> bytes:
     for i, (tn, dn) in enumerate([("Text 2","Text 3"),("Text 5","Text 6"),("Text 8","Text 9"),("Text 11","Text 12")]):
         if i < len(d["steps"]):
             st_ = d["steps"][i]
-            if st_.get("title"): set_run(s, tn, st_["title"])
-            if st_.get("desc"):  set_run(s, dn, st_["desc"])
+            if st_.get("title"): set_run(s, tn, st_["title"][:55])
+            if st_.get("desc"):  set_run(s, dn, st_["desc"][:95])
 
     # Slide 11 — Logo
     if logo_bytes:
