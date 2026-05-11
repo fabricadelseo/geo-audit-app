@@ -665,6 +665,7 @@ def generate_pptx(empresa: str, fecha: date, logo_bytes, d: dict) -> bytes:
     set_run(s, "Text 4", "")
 
     # Recuadro blanco en la franja inferior
+    from pptx.dml.color import RGBColor
     WHITE_BOX_H = 1000000
     white_box_top = 5143500 - WHITE_BOX_H
     wb = s.shapes.add_shape(1, Emu(0), Emu(white_box_top), Emu(9144000), Emu(WHITE_BOX_H))
