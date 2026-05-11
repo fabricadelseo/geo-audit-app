@@ -371,6 +371,20 @@ def generate_pptx(empresa: str, fecha: date, logo_bytes, d: dict) -> bytes:
     s = prs.slides[0]
     set_run(s, "Text 2", empresa)
     set_run(s, "Text 4", f"Análisis de visibilidad en LLMs · {date_str}")
+    # Logo La Fábrica del SEO — esquina inferior derecha
+    fabrica_logo = os.path.join(BASE_DIR, "logo_fabrica.png")
+    if os.path.exists(fabrica_logo):
+        from pptx.util import Pt
+        from PIL import Image as PILImage
+        with open(fabrica_logo, "rb") as f:
+            fl_bytes = f.read()
+        img = PILImage.open(io.BytesIO(fl_bytes))
+        img_w, img_h = img.size
+        logo_w = 1800000  # ~5cm
+        logo_h = int(logo_w * img_h / img_w)
+        left = 9144000 - logo_w - 300000
+        top  = 5143500 - logo_h - 250000
+        s.shapes.add_picture(fabrica_logo, Emu(left), Emu(top), Emu(logo_w), Emu(logo_h))
 
     # Slide 2 — Resumen ejecutivo
     s     = prs.slides[1]
