@@ -493,7 +493,10 @@ with st.sidebar:
     fecha     = st.date_input("Fecha de auditoría", value=date.today())
     logo_file = st.file_uploader("Logo de la empresa (opcional)", type=["jpg", "jpeg", "png", "svg"])
     if logo_file:
-        st.image(logo_file, caption="Logo cargado", use_container_width=True)
+        if logo_file.name.lower().endswith(".svg"):
+            st.success(f"Logo SVG cargado: {logo_file.name}")
+        else:
+            st.image(logo_file, caption="Logo cargado", use_container_width=True)
 
     st.divider()
     pulse_file = st.file_uploader(
