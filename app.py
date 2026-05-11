@@ -361,6 +361,93 @@ def replace_logo(slide, name: str, img_bytes: bytes):
 
 
 # ─────────────────────────────────────────────────────────────
+# HELPER — diseño de lista numerada (slides 7 y 8)
+# ─────────────────────────────────────────────────────────────
+
+def build_list_slide(s, title: str, subtitle: str, items: list):
+    """Dibuja slides 7/8: fondo blanco, título, línea, subtítulo, 4 ítems con círculo."""
+    from pptx.dml.color import RGBColor
+    from pptx.util import Pt
+    from pptx.enum.text import PP_ALIGN, MSO_ANCHOR
+
+    NAVY  = RGBColor(0x0F, 0x1B, 0x3D)
+    LGRAY = RGBColor(0xBB, 0xBB, 0xBB)
+    DARK  = RGBColor(0x22, 0x22, 0x22)
+    WHITE = RGBColor(0xFF, 0xFF, 0xFF)
+    SW, SH = 9144000, 5143500
+    ML = 500000  # margen izquierdo
+
+    # Fondo blanco sobre toda la slide (al fondo del z-order)
+    bg = s.shapes.add_shape(1, Emu(0), Emu(0), Emu(SW), Emu(SH))
+    bg.fill.solid()
+    bg.fill.fore_color.rgb = WHITE
+    bg.line.fill.background()
+    tree = s.shapes._spTree
+    tree.remove(bg._element)
+    tree.insert(2, bg._element)
+
+    # Título
+    tb = s.shapes.add_textbox(Emu(ML), Emu(260000), Emu(SW - 2 * ML), Emu(570000))
+    tb.text_frame.word_wrap = False
+    p = tb.text_frame.paragraphs[0]
+    p.text = title
+    r = p.runs[0]
+    r.font.bold = True
+    r.font.size = Pt(38)
+    r.font.color.rgb = NAVY
+
+    # Línea separadora corta
+    sep = s.shapes.add_shape(1, Emu(ML), Emu(865000), Emu(700000), Emu(16000))
+    sep.fill.solid()
+    sep.fill.fore_color.rgb = LGRAY
+    sep.line.fill.background()
+
+    # Subtítulo
+    sb = s.shapes.add_textbox(Emu(ML), Emu(940000), Emu(SW - 2 * ML), Emu(230000))
+    p = sb.text_frame.paragraphs[0]
+    p.text = subtitle
+    r = p.runs[0]
+    r.font.size = Pt(12)
+    r.font.color.rgb = DARK
+
+    # Ítems numerados
+    CD = 370000   # diámetro del círculo
+    IT = 1260000  # top del primer ítem
+    IS = 870000   # paso vertical entre ítems
+    TL = ML + CD + 130000  # left del texto
+
+    for i, text in enumerate(items[:4]):
+        top = IT + i * IS
+
+        # Círculo con número
+        circ = s.shapes.add_shape(9, Emu(ML), Emu(top), Emu(CD), Emu(CD))
+        circ.fill.background()
+        circ.line.color.rgb = NAVY
+        circ.line.width = Pt(1.5)
+        tf = circ.text_frame
+        tf.word_wrap = False
+        tf.vertical_anchor = MSO_ANCHOR.MIDDLE
+        p = tf.paragraphs[0]
+        p.alignment = PP_ALIGN.CENTER
+        p.text = str(i + 1)
+        r = p.runs[0]
+        r.font.size = Pt(12)
+        r.font.color.rgb = NAVY
+        r.font.bold = True
+
+        # Texto del ítem
+        txb = s.shapes.add_textbox(Emu(TL), Emu(top), Emu(SW - TL - ML), Emu(CD + 60000))
+        tf2 = txb.text_frame
+        tf2.word_wrap = True
+        tf2.vertical_anchor = MSO_ANCHOR.MIDDLE
+        p = tf2.paragraphs[0]
+        p.text = text[:160]
+        r = p.runs[0]
+        r.font.size = Pt(13)
+        r.font.color.rgb = DARK
+
+
+# ─────────────────────────────────────────────────────────────
 # GENERADOR PPTX
 # ─────────────────────────────────────────────────────────────
 
@@ -500,19 +587,21 @@ def generate_pptx(empresa: str, fecha: date, logo_bytes, d: dict) -> bytes:
         t2.height = Emu(3650000)
     set_body(s, "Text 2", d["gemini_analysis"].split("\n"))
 
-    # Slide 7 — Fortalezas
-    s = prs.slides[6]
-    for i, name in enumerate(["Text 2", "Text 3", "Text 4", "Text 5"]):
-        txt = d["strengths"][i] if i < len(d["strengths"]) else ""
-        if txt.strip():
-            set_run(s, name, f"{i+1}. {txt[:150]}")
+    # Slide 7 — Fortalezas (diseño lista numerada)
+    build_list_slide(
+        prs.slides[6],
+        title    = "Fortalezas actuales",
+        subtitle = "Lo que está funcionando:",
+        items    = d.get("strengths", []),
+    )
 
-    # Slide 8 — Oportunidades
-    s = prs.slides[7]
-    for i, name in enumerate(["Text 2", "Text 3", "Text 4", "Text 5"]):
-        txt = d["opportunities"][i] if i < len(d["opportunities"]) else ""
-        if txt.strip():
-            set_run(s, name, f"{i+1}. {txt[:150]}")
+    # Slide 8 — Oportunidades (diseño lista numerada)
+    build_list_slide(
+        prs.slides[7],
+        title    = "Oportunidades de mejora",
+        subtitle = "Áreas con potencial de crecimiento:",
+        items    = d.get("opportunities", []),
+    )
 
     # Slide 9 — Recomendaciones
     s = prs.slides[8]
