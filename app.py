@@ -289,6 +289,7 @@ def set_body(slide, name: str, lines: list):
         txBody.remove(p)
 
     for line in lines:
+        is_header = line.strip().endswith(":")
         new_p = etree.SubElement(txBody, qn("a:p"))
         if template_pPr is not None:
             pPr_copy = copy.deepcopy(template_pPr)
@@ -300,7 +301,13 @@ def set_body(slide, name: str, lines: list):
         if line:
             new_r = etree.SubElement(new_p, qn("a:r"))
             if template_rPr is not None:
-                new_r.append(copy.deepcopy(template_rPr))
+                rPr_copy = copy.deepcopy(template_rPr)
+                if is_header:
+                    rPr_copy.set("b", "1")
+                new_r.append(rPr_copy)
+            elif is_header:
+                rPr_new = etree.SubElement(new_r, qn("a:rPr"))
+                rPr_new.set("b", "1")
             new_t = etree.SubElement(new_r, qn("a:t"))
             new_t.text = line
 
@@ -457,11 +464,19 @@ def generate_pptx(empresa: str, fecha: date, logo_bytes, d: dict) -> bytes:
     # Slide 5 — Análisis ChatGPT
     s = prs.slides[4]
     set_run(s, "Text 1", f"Score: {gpt}/100")
+    t2 = find_shape(s, "Text 2")
+    if t2:
+        t2.top    = Emu(1260000)
+        t2.height = Emu(3650000)
     set_body(s, "Text 2", d["chatgpt_analysis"].split("\n"))
 
     # Slide 6 — Análisis Gemini
     s = prs.slides[5]
     set_run(s, "Text 1", f"Score: {gem}/100")
+    t2 = find_shape(s, "Text 2")
+    if t2:
+        t2.top    = Emu(1260000)
+        t2.height = Emu(3650000)
     set_body(s, "Text 2", d["gemini_analysis"].split("\n"))
 
     # Slide 7 — Fortalezas
@@ -469,14 +484,14 @@ def generate_pptx(empresa: str, fecha: date, logo_bytes, d: dict) -> bytes:
     for i, name in enumerate(["Text 2", "Text 3", "Text 4", "Text 5"]):
         txt = d["strengths"][i] if i < len(d["strengths"]) else ""
         if txt.strip():
-            set_run(s, name, f"{i+1}. {txt}")
+            set_run(s, name, f"{i+1}. {txt[:150]}")
 
     # Slide 8 — Oportunidades
     s = prs.slides[7]
     for i, name in enumerate(["Text 2", "Text 3", "Text 4", "Text 5"]):
         txt = d["opportunities"][i] if i < len(d["opportunities"]) else ""
         if txt.strip():
-            set_run(s, name, f"{i+1}. {txt}")
+            set_run(s, name, f"{i+1}. {txt[:150]}")
 
     # Slide 9 — Recomendaciones
     s = prs.slides[8]
