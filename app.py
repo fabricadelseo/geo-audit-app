@@ -269,7 +269,12 @@ def set_body(slide, name: str, lines: list):
     for line in lines:
         new_p = etree.SubElement(txBody, qn("a:p"))
         if template_pPr is not None:
-            new_p.append(copy.deepcopy(template_pPr))
+            pPr_copy = copy.deepcopy(template_pPr)
+            pPr_copy.set("algn", "just")
+            new_p.append(pPr_copy)
+        else:
+            pPr_new = etree.SubElement(new_p, qn("a:pPr"))
+            pPr_new.set("algn", "just")
         if line:
             new_r = etree.SubElement(new_p, qn("a:r"))
             if template_rPr is not None:
@@ -288,6 +293,7 @@ def update_bar(slide, name: str, score: int):
 
 
 def replace_logo(slide, name: str, img_bytes: bytes):
+    from PIL import Image as PILImage
     shape = find_shape(slide, name)
     if not shape or shape.shape_type != 13:
         return
@@ -297,8 +303,32 @@ def replace_logo(slide, name: str, img_bytes: bytes):
         return
     r_ns  = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
     rId   = blip.get(f"{{{r_ns}}}embed")
-    if rId and rId in slide.part.rels:
-        slide.part.rels[rId].target_part._blob = img_bytes
+    if not rId or rId not in slide.part.rels:
+        return
+
+    # Ajustar shape al aspect ratio real del logo sin distorsionar
+    try:
+        img = PILImage.open(io.BytesIO(img_bytes))
+        img_w, img_h = img.size
+        max_size = 2651760  # ancho/alto máximo del placeholder (EMU)
+        ratio = img_w / img_h
+        if ratio >= 1:  # más ancho que alto
+            new_w = max_size
+            new_h = int(max_size / ratio)
+        else:           # más alto que ancho
+            new_h = max_size
+            new_w = int(max_size * ratio)
+        # Centrar dentro del placeholder original
+        orig_left = shape.left
+        orig_top  = shape.top
+        shape.width  = Emu(new_w)
+        shape.height = Emu(new_h)
+        shape.left   = orig_left + (max_size - new_w) // 2
+        shape.top    = orig_top  + (max_size - new_h) // 2
+    except Exception:
+        pass  # si falla, deja las dimensiones originales
+
+    slide.part.rels[rId].target_part._blob = img_bytes
 
 
 # ─────────────────────────────────────────────────────────────
@@ -333,31 +363,60 @@ def generate_pptx(empresa: str, fecha: date, logo_bytes, d: dict) -> bytes:
         d["resumen"],
     ])
 
-    # Slide 3 — Visibilidad por modelo
+    # Slide 3 — Visibilidad por modelo (barras proporcionales al score, full height del track)
     s = prs.slides[2]
-    update_bar(s, "Shape 2",  gpt)
-    update_bar(s, "Shape 7",  gem)
-    update_bar(s, "Shape 12", cla)
-    update_bar(s, "Shape 17", per)
+    for bar_name, track_name, score_val in [
+        ("Shape 2",  "Shape 1",  gpt),
+        ("Shape 7",  "Shape 6",  gem),
+        ("Shape 12", "Shape 11", cla),
+        ("Shape 17", "Shape 16", per),
+    ]:
+        track = find_shape(s, track_name)
+        bar   = find_shape(s, bar_name)
+        if track and bar:
+            bar.top    = track.top
+            bar.height = track.height
+            bar.width  = Emu(max(1, score_val) * EMU_PER_SCORE_PT)
     set_run(s, "Text 4",  f"{gpt}/100"); set_run(s, "Text 5",  model_label(gpt, "ChatGPT"))
     set_run(s, "Text 9",  f"{gem}/100"); set_run(s, "Text 10", model_label(gem, "Gemini"))
     set_run(s, "Text 14", f"{cla}/100"); set_run(s, "Text 15", model_label(cla, "Claude"))
     set_run(s, "Text 19", f"{per}/100"); set_run(s, "Text 20", model_label(per, "Perplexity"))
     set_run(s, "Text 21", f"Promedio: {avg}/100")
 
-    # Slide 4 — Contexto competitivo
+    # Slide 4 — Contexto competitivo (cajas más grandes, texto justificado)
     s = prs.slides[3]
-    comp_map = [("Text 2", "Text 3", "Text 4"), ("Text 6", "Text 7", "Text 8"), ("Text 10", "Text 11", "Text 12")]
-    for i, (tn, sn, dn) in enumerate(comp_map):
-        comps = d.get("competitors", [])
+    NEW_BG_H   = 731520   # antes 502920
+    NEW_TEXT_H = 457200   # antes 228600
+    TEXT_OFFSET = 73152   # desplazamiento título dentro de la caja
+    row_tops = [1097280, 1920240, 2743200, 3566160]
+    bg_names   = ["Shape 1", "Shape 5", "Shape 9",  "Shape 13"]
+    text_groups = [
+        ("Text 2",  "Text 3",  "Text 4"),
+        ("Text 6",  "Text 7",  "Text 8"),
+        ("Text 10", "Text 11", "Text 12"),
+        ("Text 14", "Text 15", "Text 16"),
+    ]
+    for row_i, (bg_name, texts, row_top) in enumerate(zip(bg_names, text_groups, row_tops)):
+        bg = find_shape(s, bg_name)
+        if bg:
+            bg.top    = Emu(row_top)
+            bg.height = Emu(NEW_BG_H)
+        for t_name in texts:
+            sh = find_shape(s, t_name)
+            if sh:
+                sh.top    = Emu(row_top + TEXT_OFFSET)
+                sh.height = Emu(NEW_TEXT_H)
+
+    comps = d.get("competitors", [])
+    for i, (tn, sn, dn) in enumerate([("Text 2","Text 3","Text 4"),("Text 6","Text 7","Text 8"),("Text 10","Text 11","Text 12")]):
         if i < len(comps):
             c = comps[i]
             set_run(s, tn, c.get("name", ""))
             set_run(s, sn, "⭐" * max(1, min(5, c.get("stars", 3))))
-            set_run(s, dn, c.get("desc", ""))
+            set_run(s, dn, c.get("desc", "")[:120])
     set_run(s, "Text 14", empresa)
     set_run(s, "Text 15", score_stars(score))
-    set_run(s, "Text 16", d["competitive_desc"])
+    set_run(s, "Text 16", d["competitive_desc"][:120])
 
     # Slide 5 — Análisis ChatGPT
     s = prs.slides[4]
