@@ -513,12 +513,9 @@ with st.sidebar:
 
     empresa   = st.text_input("Nombre de la empresa *", placeholder="Ej: Acme Corp")
     fecha     = st.date_input("Fecha de auditoría", value=date.today())
-    logo_file = st.file_uploader("Logo de la empresa (opcional)", type=["jpg", "jpeg", "png", "svg"])
+    logo_file = st.file_uploader("Logo de la empresa (opcional)", type=["jpg", "jpeg", "png"])
     if logo_file:
-        if logo_file.name.lower().endswith(".svg"):
-            st.success(f"Logo SVG cargado: {logo_file.name}")
-        else:
-            st.image(logo_file, caption="Logo cargado", use_container_width=True)
+        st.image(logo_file, caption="Logo cargado", use_container_width=True)
 
     st.divider()
     pulse_file = st.file_uploader(
@@ -628,11 +625,6 @@ with col_action:
                 try:
                     if logo_file:
                         logo_bytes = logo_file.getvalue()
-                        if logo_file.name.lower().endswith(".svg"):
-                            from svglib.svglib import svg2rlg
-                            from reportlab.graphics import renderPM
-                            rlg = svg2rlg(io.BytesIO(logo_bytes))
-                            logo_bytes = renderPM.drawToString(rlg, fmt="PNG")
                     else:
                         logo_bytes = None
                     pptx_bytes = generate_pptx(empresa.strip(), fecha, logo_bytes, result)
