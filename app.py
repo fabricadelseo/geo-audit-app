@@ -377,14 +377,16 @@ def build_list_slide(s, title: str, subtitle: str, items: list):
     SW, SH = 9144000, 5143500
     ML = 500000  # margen izquierdo
 
-    # Fondo blanco sobre toda la slide (al fondo del z-order)
+    # Eliminar todos los shapes del template para evitar solapamiento
+    sp_tree = s.shapes._spTree
+    for child in list(sp_tree)[2:]:
+        sp_tree.remove(child)
+
+    # Fondo blanco
     bg = s.shapes.add_shape(1, Emu(0), Emu(0), Emu(SW), Emu(SH))
     bg.fill.solid()
     bg.fill.fore_color.rgb = WHITE
     bg.line.fill.background()
-    tree = s.shapes._spTree
-    tree.remove(bg._element)
-    tree.insert(2, bg._element)
 
     # Título
     tb = s.shapes.add_textbox(Emu(ML), Emu(260000), Emu(SW - 2 * ML), Emu(570000))
