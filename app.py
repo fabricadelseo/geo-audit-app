@@ -67,8 +67,28 @@ Devuelve EXCLUSIVAMENTE un JSON válido, sin texto antes ni después:
     {{"name": "<nombre exacto leído en la imagen, sección Top Competitors>", "stars": <entero 1-5>, "desc": "<descripción leída en la imagen, traducida al español>"}},
     {{"name": "<nombre exacto leído en la imagen, sección Top Competitors>", "stars": <entero 1-5>, "desc": "<descripción leída en la imagen, traducida al español>"}}
   ],
-  "chatgpt_analysis": "Hallazgos:\\n• <hallazgo 1>\\n• <hallazgo 2>\\n• <hallazgo 3>\\n• <hallazgo 4>\\n\\nBrechas identificadas:\\n\\u2717 <brecha 1>\\n\\u2717 <brecha 2>\\n\\u2717 <brecha 3>",
-  "gemini_analysis": "Hallazgos:\\n• <hallazgo 1>\\n• <hallazgo 2>\\n• <hallazgo 3>\\n\\nBrechas identificadas:\\n\\u2717 <brecha 1>\\n\\u2717 <brecha 2>\\n\\u2717 <brecha 3>",
+  "chatgpt_hallazgos": [
+    {{"title": "<hallazgo crítico 1, máx 40 chars>", "detail": "<2-3 líneas separadas por \\n, máx 160 chars total>"}},
+    {{"title": "<hallazgo crítico 2, máx 40 chars>", "detail": "<2-3 líneas separadas por \\n, máx 160 chars total>"}},
+    {{"title": "<hallazgo crítico 3, máx 40 chars>", "detail": "<2-3 líneas separadas por \\n, máx 160 chars total>"}}
+  ],
+  "chatgpt_diagnosticos": [
+    {{"label": "Visibilidad ChatGPT", "value": "<Nula|Baja|Media|Alta>"}},
+    {{"label": "<diagnóstico clave 2>", "value": "<valor corto, máx 20 chars>"}},
+    {{"label": "<diagnóstico clave 3>", "value": "<valor corto, máx 20 chars>"}}
+  ],
+  "chatgpt_prioridad": "<ACCIÓN PRIORITARIA CHATGPT EN MAYÚSCULAS, máx 55 chars>",
+  "gemini_hallazgos": [
+    {{"title": "<hallazgo crítico 1, máx 40 chars>", "detail": "<2-3 líneas separadas por \\n, máx 160 chars total>"}},
+    {{"title": "<hallazgo crítico 2, máx 40 chars>", "detail": "<2-3 líneas separadas por \\n, máx 160 chars total>"}},
+    {{"title": "<hallazgo crítico 3, máx 40 chars>", "detail": "<2-3 líneas separadas por \\n, máx 160 chars total>"}}
+  ],
+  "gemini_diagnosticos": [
+    {{"label": "Visibilidad Gemini", "value": "<Nula|Baja|Media|Alta>"}},
+    {{"label": "<diagnóstico clave 2>", "value": "<valor corto, máx 20 chars>"}},
+    {{"label": "<diagnóstico clave 3>", "value": "<valor corto, máx 20 chars>"}}
+  ],
+  "gemini_prioridad": "<ACCIÓN PRIORITARIA GEMINI EN MAYÚSCULAS, máx 55 chars>",
   "strengths": [
     "<fortaleza actual 1>",
     "<fortaleza actual 2>",
@@ -361,6 +381,180 @@ def replace_logo(slide, name: str, img_bytes: bytes):
 
 
 # ─────────────────────────────────────────────────────────────
+# HELPER — arco SVG para gauge circular
+# ─────────────────────────────────────────────────────────────
+
+def add_arc_xml(slide, left, top, width, height, adj1, adj2, color_hex, line_w_emu):
+    """Inserta un arco (prstGeom arc) vía XML directo en el spTree del slide."""
+    sp_tree = slide.shapes._spTree
+    max_id = 0
+    for el in sp_tree.iter():
+        try:
+            max_id = max(max_id, int(el.get("id", 0)))
+        except (ValueError, TypeError):
+            pass
+    sp_id = max_id + 1
+    xml = (
+        f'<p:sp xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main" '
+        f'xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">'
+        f'<p:nvSpPr>'
+        f'<p:cNvPr id="{sp_id}" name="arc{sp_id}"/>'
+        f'<p:cNvSpPr/><p:nvPr/>'
+        f'</p:nvSpPr>'
+        f'<p:spPr>'
+        f'<a:xfrm><a:off x="{left}" y="{top}"/><a:ext cx="{width}" cy="{height}"/></a:xfrm>'
+        f'<a:prstGeom prst="arc"><a:avLst>'
+        f'<a:gd name="adj1" fmla="val {adj1}"/>'
+        f'<a:gd name="adj2" fmla="val {adj2}"/>'
+        f'</a:avLst></a:prstGeom>'
+        f'<a:noFill/>'
+        f'<a:ln w="{line_w_emu}" cap="rnd">'
+        f'<a:solidFill><a:srgbClr val="{color_hex}"/></a:solidFill>'
+        f'</a:ln>'
+        f'</p:spPr>'
+        f'</p:sp>'
+    )
+    from lxml import etree as _etree
+    sp_tree.append(_etree.fromstring(xml))
+
+
+# ─────────────────────────────────────────────────────────────
+# HELPER — diseño panel score + hallazgos (slides 5 y 6)
+# ─────────────────────────────────────────────────────────────
+
+def build_analysis_slide(s, score: int, model_name: str, hallazgos: list, diagnosticos: list, prioridad: str):
+    """Dibuja slides 5/6: panel izquierdo (score+gauge+diagnósticos) y panel derecho (hallazgos)."""
+    from pptx.dml.color import RGBColor
+    from pptx.util import Pt
+    from pptx.enum.text import PP_ALIGN, MSO_ANCHOR
+
+    NAVY  = RGBColor(0x0F, 0x1B, 0x3D)
+    BLUE  = RGBColor(0x23, 0x6F, 0xAB)
+    LGRAY = RGBColor(0xF0, 0xF2, 0xF5)
+    DGRAY = RGBColor(0xCC, 0xCC, 0xCC)
+    GRAY  = RGBColor(0x88, 0x88, 0x88)
+    DARK  = RGBColor(0x22, 0x22, 0x22)
+    WHITE = RGBColor(0xFF, 0xFF, 0xFF)
+    SW, SH = 9144000, 5143500
+
+    # Limpiar shapes del template
+    sp_tree = s.shapes._spTree
+    for child in list(sp_tree)[2:]:
+        sp_tree.remove(child)
+
+    # Fondo blanco global
+    bg = s.shapes.add_shape(1, Emu(0), Emu(0), Emu(SW), Emu(SH))
+    bg.fill.solid(); bg.fill.fore_color.rgb = WHITE; bg.line.fill.background()
+
+    # ── PANEL IZQUIERDO ──────────────────────────────────────
+    PL_L, PL_W, PL_T = 70000, 2560000, 70000
+    PL_H = SH - 140000
+    ML   = PL_L + 200000          # margen contenido dentro del panel
+    PC   = PL_L + PL_W // 2       # centro x del panel
+
+    panel = s.shapes.add_shape(1, Emu(PL_L), Emu(PL_T), Emu(PL_W), Emu(PL_H))
+    panel.fill.solid(); panel.fill.fore_color.rgb = LGRAY; panel.line.fill.background()
+
+    # "PUNTUACIÓN" label
+    tb = s.shapes.add_textbox(Emu(ML), Emu(200000), Emu(PL_W - 300000), Emu(160000))
+    p = tb.text_frame.paragraphs[0]; p.text = "PUNTUACIÓN"
+    r = p.runs[0]; r.font.size = Pt(9); r.font.bold = True; r.font.color.rgb = GRAY
+
+    # Score número grande
+    sb = s.shapes.add_textbox(Emu(ML), Emu(360000), Emu(900000), Emu(520000))
+    sb.text_frame.word_wrap = False
+    p = sb.text_frame.paragraphs[0]; p.text = str(score)
+    r = p.runs[0]; r.font.size = Pt(52); r.font.bold = True; r.font.color.rgb = NAVY
+
+    # "/100"
+    lb = s.shapes.add_textbox(Emu(ML + 800000), Emu(490000), Emu(400000), Emu(220000))
+    p = lb.text_frame.paragraphs[0]; p.text = "/100"
+    r = p.runs[0]; r.font.size = Pt(13); r.font.color.rgb = GRAY
+
+    # Gauge circular
+    GD = 800000   # diámetro
+    GL = PC - GD // 2
+    GT = 950000
+    # Arco gris (pista completa: 300°, de 7 en punto a 5 en punto)
+    # En OOXML: 0°=3h, aumenta en sentido horario.  7h=120°, 5h=60° (largo=300° horario)
+    A1 = 7200000   # 120° × 60000
+    A2 = 25200000  # 120° + 300° = 420° × 60000 (wrap a 60°)
+    add_arc_xml(s, GL, GT, GD, GD, A1, A2, "CCCCCC", 110000)
+    # Arco azul (score %)
+    score_sweep = int(score / 100 * (A2 - A1))
+    if score_sweep > 0:
+        add_arc_xml(s, GL, GT, GD, GD, A1, A1 + score_sweep, "236FAB", 110000)
+
+    # "DIAGNÓSTICO" heading
+    DIAG_T = GT + GD + 140000
+    dtb = s.shapes.add_textbox(Emu(ML), Emu(DIAG_T), Emu(PL_W - 300000), Emu(190000))
+    p = dtb.text_frame.paragraphs[0]; p.text = "DIAGNÓSTICO"
+    r = p.runs[0]; r.font.size = Pt(10); r.font.bold = True; r.font.color.rgb = BLUE
+
+    # Separador
+    sep = s.shapes.add_shape(1, Emu(ML), Emu(DIAG_T + 200000), Emu(PL_W - 350000), Emu(12000))
+    sep.fill.solid(); sep.fill.fore_color.rgb = DGRAY; sep.line.fill.background()
+
+    # 3 ítems de diagnóstico
+    for j, diag in enumerate(diagnosticos[:3]):
+        it = DIAG_T + 260000 + j * 440000
+        ltb = s.shapes.add_textbox(Emu(ML), Emu(it), Emu(PL_W - 300000), Emu(160000))
+        p = ltb.text_frame.paragraphs[0]; p.text = diag.get("label", "")[:35]
+        r = p.runs[0]; r.font.size = Pt(10); r.font.color.rgb = GRAY
+
+        vtb = s.shapes.add_textbox(Emu(ML), Emu(it + 165000), Emu(PL_W - 300000), Emu(210000))
+        p = vtb.text_frame.paragraphs[0]; p.text = diag.get("value", "")[:25]
+        r = p.runs[0]; r.font.size = Pt(12); r.font.bold = True; r.font.color.rgb = DARK
+
+    # ── PANEL DERECHO ────────────────────────────────────────
+    RP_L = PL_L + PL_W + 120000
+    RP_W = SW - RP_L - 80000
+
+    # Título "Hallazgos críticos"
+    ttb = s.shapes.add_textbox(Emu(RP_L), Emu(130000), Emu(RP_W), Emu(540000))
+    ttb.text_frame.word_wrap = False
+    p = ttb.text_frame.paragraphs[0]; p.text = "Hallazgos críticos"
+    r = p.runs[0]; r.font.size = Pt(34); r.font.bold = True; r.font.color.rgb = NAVY
+
+    # 3 hallazgos
+    BULL_D  = 175000
+    ITEM_T  = 760000
+    ITEM_S  = 1280000
+    TXT_L   = RP_L + BULL_D + 160000
+    TXT_W   = RP_W - BULL_D - 160000
+
+    for i, h in enumerate(hallazgos[:3]):
+        it = ITEM_T + i * ITEM_S
+
+        # Bala azul rellena
+        bull = s.shapes.add_shape(9, Emu(RP_L), Emu(it + 20000), Emu(BULL_D), Emu(BULL_D))
+        bull.fill.solid(); bull.fill.fore_color.rgb = BLUE; bull.line.fill.background()
+
+        # Título del hallazgo (negrita)
+        htb = s.shapes.add_textbox(Emu(TXT_L), Emu(it), Emu(TXT_W), Emu(210000))
+        p = htb.text_frame.paragraphs[0]; p.text = h.get("title", "")[:45]
+        r = p.runs[0]; r.font.size = Pt(12); r.font.bold = True; r.font.color.rgb = DARK
+
+        # Detalle (multi-línea)
+        detail_lines = h.get("detail", "").split("\\n")
+        det_tb = s.shapes.add_textbox(Emu(TXT_L), Emu(it + 215000), Emu(TXT_W), Emu(ITEM_S - 260000))
+        det_tf = det_tb.text_frame; det_tf.word_wrap = True
+        for li, line in enumerate(detail_lines[:3]):
+            if li == 0:
+                p = det_tf.paragraphs[0]
+            else:
+                p = det_tf.add_paragraph()
+            p.text = line[:90]
+            r = p.runs[0]; r.font.size = Pt(11); r.font.color.rgb = DARK
+
+    # Texto de prioridad al fondo
+    ptb = s.shapes.add_textbox(Emu(RP_L), Emu(SH - 460000), Emu(RP_W), Emu(210000))
+    p = ptb.text_frame.paragraphs[0]
+    p.text = f"PRIORIDAD: {prioridad[:55]}"
+    r = p.runs[0]; r.font.size = Pt(11); r.font.bold = True; r.font.color.rgb = BLUE
+
+
+# ─────────────────────────────────────────────────────────────
 # HELPER — diseño de lista numerada (slides 7 y 8)
 # ─────────────────────────────────────────────────────────────
 
@@ -571,23 +765,25 @@ def generate_pptx(empresa: str, fecha: date, logo_bytes, d: dict) -> bytes:
     set_run(s, "Text 15", score_stars(score))
     set_run(s, "Text 16", d["competitive_desc"][:120])
 
-    # Slide 5 — Análisis ChatGPT
-    s = prs.slides[4]
-    set_run(s, "Text 1", f"Score: {gpt}/100")
-    t2 = find_shape(s, "Text 2")
-    if t2:
-        t2.top    = Emu(1260000)
-        t2.height = Emu(3650000)
-    set_body(s, "Text 2", d["chatgpt_analysis"].split("\n"))
+    # Slide 5 — Análisis ChatGPT (diseño panel score + hallazgos)
+    build_analysis_slide(
+        prs.slides[4],
+        score       = gpt,
+        model_name  = "ChatGPT",
+        hallazgos   = d.get("chatgpt_hallazgos", []),
+        diagnosticos= d.get("chatgpt_diagnosticos", []),
+        prioridad   = d.get("chatgpt_prioridad", ""),
+    )
 
-    # Slide 6 — Análisis Gemini
-    s = prs.slides[5]
-    set_run(s, "Text 1", f"Score: {gem}/100")
-    t2 = find_shape(s, "Text 2")
-    if t2:
-        t2.top    = Emu(1260000)
-        t2.height = Emu(3650000)
-    set_body(s, "Text 2", d["gemini_analysis"].split("\n"))
+    # Slide 6 — Análisis Gemini (diseño panel score + hallazgos)
+    build_analysis_slide(
+        prs.slides[5],
+        score       = gem,
+        model_name  = "Gemini",
+        hallazgos   = d.get("gemini_hallazgos", []),
+        diagnosticos= d.get("gemini_diagnosticos", []),
+        prioridad   = d.get("gemini_prioridad", ""),
+    )
 
     # Slide 7 — Fortalezas (diseño lista numerada)
     build_list_slide(
