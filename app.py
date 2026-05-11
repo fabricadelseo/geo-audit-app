@@ -378,20 +378,41 @@ def generate_pptx(empresa: str, fecha: date, logo_bytes, d: dict) -> bytes:
     s = prs.slides[0]
     set_run(s, "Text 2", empresa)
     set_run(s, "Text 4", f"Análisis de visibilidad en LLMs · {date_str}")
-    # Logo La Fábrica del SEO — esquina inferior derecha
+
+    # Cambiar color de Text 4 a navy
+    from pptx.dml.color import RGBColor
+    shape_t4 = find_shape(s, "Text 4")
+    if shape_t4 and hasattr(shape_t4, "text_frame"):
+        for para in shape_t4.text_frame.paragraphs:
+            for run in para.runs:
+                run.font.color.rgb = RGBColor(0x0F, 0x1B, 0x3D)
+
+    # Recuadro blanco en la franja inferior
+    WHITE_BOX_H = 1000000
+    white_box_top = 5143500 - WHITE_BOX_H
+    wb = s.shapes.add_shape(1, Emu(0), Emu(white_box_top), Emu(9144000), Emu(WHITE_BOX_H))
+    wb.fill.solid()
+    wb.fill.fore_color.rgb = RGBColor(0xFF, 0xFF, 0xFF)
+    wb.line.fill.background()
+    # Mover el recuadro al fondo (detrás de todos los shapes)
+    sp_elem  = wb._element
+    sp_tree  = s.shapes._spTree
+    sp_tree.remove(sp_elem)
+    sp_tree.insert(2, sp_elem)  # índice 2 = justo después de nvGrpSpPr y grpSpPr
+
+    # Logo La Fábrica del SEO dentro del recuadro blanco
     fabrica_logo = os.path.join(BASE_DIR, "logo_fabrica.png")
     if os.path.exists(fabrica_logo):
-        from pptx.util import Pt
         from PIL import Image as PILImage
         with open(fabrica_logo, "rb") as f:
             fl_bytes = f.read()
         img = PILImage.open(io.BytesIO(fl_bytes))
         img_w, img_h = img.size
-        logo_w = 1800000  # ~5cm
-        logo_h = int(logo_w * img_h / img_w)
-        left = 9144000 - logo_w - 300000
-        top  = 5143500 - logo_h - 250000
-        s.shapes.add_picture(fabrica_logo, Emu(left), Emu(top), Emu(logo_w), Emu(logo_h))
+        logo_h_emu = int(WHITE_BOX_H * 0.60)
+        logo_w_emu = int(logo_h_emu * img_w / img_h)
+        logo_left = 9144000 - logo_w_emu - 350000
+        logo_top  = white_box_top + (WHITE_BOX_H - logo_h_emu) // 2
+        s.shapes.add_picture(fabrica_logo, Emu(logo_left), Emu(logo_top), Emu(logo_w_emu), Emu(logo_h_emu))
 
     # Slide 2 — Resumen ejecutivo
     s     = prs.slides[1]
