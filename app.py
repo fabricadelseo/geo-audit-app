@@ -106,8 +106,9 @@ Textos en español, concretos y accionables. Priority: 1=baja, 2=media, 3=alta.\
 # FETCH COMPETITORS FROM URL
 # ─────────────────────────────────────────────────────────────
 
-def fetch_competitors_from_url(url: str) -> list:
-    """Fetches LLMs Pulse report URL and extracts Top Competitors via Claude."""
+def fetch_report_data_from_url(url: str) -> dict:
+    """Fetches LLMs Pulse report and extracts Top Competitors + Recommendations."""
+    empty = {"competitors": [], "recommendations": []}
     try:
         resp = requests.get(url, timeout=15, headers={
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0 Safari/537.36",
@@ -115,32 +116,40 @@ def fetch_competitors_from_url(url: str) -> list:
             "Accept-Language": "es-ES,es;q=0.9,en;q=0.8",
         })
         resp.raise_for_status()
-        html = resp.text
-
-        # Extrae el fragmento alrededor de "Top Competitors"
+        html  = resp.text
         lower = html.lower()
-        idx = lower.find("top competitor")
-        if idx == -1:
-            idx = lower.find("competitor")
-        if idx == -1:
-            idx = 0
-        start = max(0, idx - 500)
-        end   = min(len(html), idx + 8000)
-        html_chunk = html[start:end]
+
+        def _extract_chunk(keyword, window=8000):
+            idx = lower.find(keyword)
+            if idx == -1:
+                return ""
+            return html[max(0, idx - 300): min(len(html), idx + window)]
+
+        comp_chunk = _extract_chunk("top competitor") or _extract_chunk("competitor")
+        rec_chunk  = _extract_chunk("recommended next step") or _extract_chunk("recommendation")
+        opp_chunk  = _extract_chunk("improvement opportunit") or _extract_chunk("opportunity")
+        combined   = (
+            f"--- COMPETITORS SECTION ---\n{comp_chunk}\n\n"
+            f"--- RECOMMENDATIONS SECTION ---\n{rec_chunk}\n\n"
+            f"--- OPPORTUNITIES SECTION ---\n{opp_chunk}"
+        )
 
         client = Anthropic(api_key=ANTHROPIC_KEY)
         response = client.messages.create(
             model="claude-haiku-4-5-20251001",
-            max_tokens=600,
+            max_tokens=1200,
             messages=[{
                 "role": "user",
                 "content": (
-                    "En este fragmento HTML de un informe LLMs Pulse, localiza los competidores. "
-                    "Extrae hasta 3 con su nombre exacto y descripción. "
-                    "Devuelve SOLO un array JSON, sin texto extra:\n"
-                    '[{"name": "...", "desc": "..."}, ...]\n'
-                    "Si no encuentras competidores, devuelve []\n\n"
-                    f"HTML:\n{html_chunk}"
+                    "Analiza este HTML de un informe LLMs Pulse y extrae:\n"
+                    "1) COMPETITORS: hasta 3 competidores con nombre y descripción.\n"
+                    "2) RECOMMENDATIONS: hasta 3 recomendaciones (texto exacto de cada una).\n"
+                    "3) OPPORTUNITIES: hasta 4 oportunidades de mejora (título + descripción corta).\n\n"
+                    "Devuelve SOLO este JSON, sin texto extra:\n"
+                    '{"competitors": [{"name": "...", "desc": "..."}], '
+                    '"recommendations": ["texto 1", "texto 2", "texto 3"], '
+                    '"opportunities": ["oportunidad 1", "oportunidad 2", "oportunidad 3", "oportunidad 4"]}\n\n'
+                    f"HTML:\n{combined}"
                 ),
             }],
         )
@@ -151,14 +160,14 @@ def fetch_competitors_from_url(url: str) -> list:
                 raw = raw[4:].strip()
         return json.loads(raw)
     except Exception:
-        return []
+        return empty
 
 
 # ─────────────────────────────────────────────────────────────
 # CLAUDE API
 # ─────────────────────────────────────────────────────────────
 
-def analyze_with_claude(image_bytes: bytes, empresa: str, competitors_data: list) -> dict:
+def analyze_with_claude(image_bytes: bytes, empresa: str, competitors_data: list, recommendations_data: list, opportunities_data: list) -> dict:
     client   = Anthropic(api_key=ANTHROPIC_KEY)
     media_type = "image/png" if image_bytes[:4] == b"\x89PNG" else "image/jpeg"
     b64      = base64.standard_b64encode(image_bytes).decode("utf-8")
@@ -173,6 +182,19 @@ def analyze_with_claude(image_bytes: bytes, empresa: str, competitors_data: list
         contexto += (
             " Los competidores principales extraídos del informe LLMs Pulse son EXACTAMENTE estos "
             f"(úsalos en el campo 'competitors' en este orden, sin inventar otros): {'; '.join(partes)}."
+        )
+    if recommendations_data:
+        recs = "; ".join(f"{i+1}) {r}" for i, r in enumerate(recommendations_data))
+        contexto += (
+            f" Las siguientes recomendaciones están extraídas DIRECTAMENTE del informe LLMs Pulse "
+            f"— úsalas como base para los primeros {len(recommendations_data)} elementos del campo 'recommendations' "
+            f"(tradúcelas al español y añade título corto y prioridad): {recs}."
+        )
+    if opportunities_data:
+        opps = "; ".join(f"{i+1}) {o}" for i, o in enumerate(opportunities_data))
+        contexto += (
+            f" Las siguientes oportunidades de mejora están extraídas DIRECTAMENTE del informe LLMs Pulse "
+            f"— úsalas en el campo 'opportunities' (tradúcelas al español): {opps}."
         )
 
     response = client.messages.create(
@@ -550,21 +572,32 @@ with col_action:
             for e in errors:
                 st.error(e)
         else:
-            # Paso 1 — Extraer competidores de la URL si se proporcionó
-            competitors_data = []
+            # Paso 1 — Extraer competidores y recomendaciones de la URL
+            competitors_data    = []
+            recommendations_data = []
             if report_url.strip():
-                with st.spinner("Leyendo competidores desde el informe LLMs Pulse..."):
-                    competitors_data = fetch_competitors_from_url(report_url.strip())
+                with st.spinner("Leyendo datos desde el informe LLMs Pulse..."):
+                    report_data = fetch_report_data_from_url(report_url.strip())
+                    competitors_data     = report_data.get("competitors", [])
+                    recommendations_data = report_data.get("recommendations", [])
+                    opportunities_data   = report_data.get("opportunities", [])
+                    msgs = []
                     if competitors_data:
-                        st.success(f"Competidores extraídos: {', '.join(c['name'] for c in competitors_data)}")
+                        msgs.append(f"Competidores: {', '.join(c['name'] for c in competitors_data)}")
+                    if recommendations_data:
+                        msgs.append(f"{len(recommendations_data)} recomendaciones extraídas")
+                    if opportunities_data:
+                        msgs.append(f"{len(opportunities_data)} oportunidades extraídas")
+                    if msgs:
+                        st.success(" · ".join(msgs))
                     else:
-                        st.warning("No se pudieron extraer competidores de la URL. Claude los intentará leer del screenshot.")
+                        st.warning("No se pudieron extraer datos de la URL. Claude los generará desde el screenshot.")
 
             # Paso 2 — Claude analiza la imagen
             with st.spinner("Claude analizando el screenshot..."):
                 try:
                     pulse_file.seek(0)
-                    result = analyze_with_claude(pulse_file.read(), empresa, competitors_data)
+                    result = analyze_with_claude(pulse_file.read(), empresa, competitors_data, recommendations_data, opportunities_data)
                 except Exception as exc:
                     st.error(f"Error al analizar la imagen: {exc}")
                     import traceback
