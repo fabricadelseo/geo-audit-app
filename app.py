@@ -145,14 +145,33 @@ def fetch_report_data_from_url(url: str) -> dict:
                 return ""
             return html[max(0, idx - 300): min(len(html), idx + window)]
 
-        comp_chunk = _extract_chunk("top competitor") or _extract_chunk("competitor")
-        rec_chunk  = _extract_chunk("recommended next step") or _extract_chunk("recommendation")
-        opp_chunk  = _extract_chunk("improvement opportunit") or _extract_chunk("opportunity")
-        combined   = (
-            f"--- COMPETITORS SECTION ---\n{comp_chunk}\n\n"
-            f"--- RECOMMENDATIONS SECTION ---\n{rec_chunk}\n\n"
-            f"--- OPPORTUNITIES SECTION ---\n{opp_chunk}"
-        )
+        # Localizar la sección de competidores como ancla
+        comp_idx = lower.find("top competitor")
+        if comp_idx == -1:
+            comp_idx = lower.find("competitor")
+
+        if comp_idx != -1:
+            # Oportunidades (~9000 chars antes) y recomendaciones (~19000 chars después)
+            # Extraer un chunk grande que engloba las tres secciones
+            big_start = max(0, comp_idx - 12000)
+            big_end   = min(len(html), comp_idx + 28000)
+            combined  = f"--- REPORT ANALYSIS SECTIONS ---\n{html[big_start:big_end]}"
+        else:
+            # Fallback: keywords individuales
+            comp_chunk = _extract_chunk("competitor")
+            rec_chunk  = (
+                _extract_chunk("next step") or _extract_chunk("recommend") or
+                _extract_chunk("action") or _extract_chunk("suggest")
+            )
+            opp_chunk  = (
+                _extract_chunk("improvement") or _extract_chunk("opportunit") or
+                _extract_chunk("gap") or _extract_chunk("area")
+            )
+            combined = (
+                f"--- COMPETITORS ---\n{comp_chunk}\n\n"
+                f"--- RECOMMENDATIONS ---\n{rec_chunk}\n\n"
+                f"--- OPPORTUNITIES ---\n{opp_chunk}"
+            )
 
         client = Anthropic(api_key=ANTHROPIC_KEY)
         response = client.messages.create(
