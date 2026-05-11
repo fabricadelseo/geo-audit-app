@@ -3,3 +3,6 @@ anthropic>=0.100.0
 python-pptx>=1.0.0
 Pillow>=10.0.0
 lxml>=5.0.0
+requests>=2.31.0
+svglib>=1.5.0
+reportlab>=4.0.0

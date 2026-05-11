@@ -596,8 +596,10 @@ with col_action:
                     if logo_file:
                         logo_bytes = logo_file.getvalue()
                         if logo_file.name.lower().endswith(".svg"):
-                            import cairosvg
-                            logo_bytes = cairosvg.svg2png(bytestring=logo_bytes)
+                            from svglib.svglib import svg2rlg
+                            from reportlab.graphics import renderPM
+                            rlg = svg2rlg(io.BytesIO(logo_bytes))
+                            logo_bytes = renderPM.drawToString(rlg, fmt="PNG")
                     else:
                         logo_bytes = None
                     pptx_bytes = generate_pptx(empresa.strip(), fecha, logo_bytes, result)
