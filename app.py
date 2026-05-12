@@ -1455,6 +1455,12 @@ with tab2:
     domain_input = st.text_input("Dominio de la empresa", placeholder="Ej: lafabricadelseo.com", key="domain_input")
     st.caption("Se enviarán 5 preguntas específicas a cada modelo: competidores, reputación, fortalezas, oportunidades y prompts de búsqueda.")
 
+    with st.expander("Estado de API keys"):
+        st.write(f"{'✅' if ANTHROPIC_KEY else '❌'} Anthropic (Claude)")
+        st.write(f"{'✅' if OPENAI_KEY else '❌'} OpenAI (ChatGPT)")
+        st.write(f"{'✅' if GEMINI_KEY else '❌'} Gemini")
+        st.write(f"{'✅' if GROQ_KEY else '❌'} Groq (Grok)")
+
     col_logo, col_ahrefs = st.columns(2)
     with col_logo:
         logo_geo = st.file_uploader("Logo empresa (opcional, para el PPTX)", type=["jpg", "jpeg", "png"], key="logo_geo")
