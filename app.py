@@ -844,7 +844,7 @@ def build_recommendations_slide(s, recommendations: list):
 # GENERADOR PPTX
 # ─────────────────────────────────────────────────────────────
 
-def generate_pptx(empresa: str, fecha: date, logo_bytes, d: dict) -> bytes:
+def generate_pptx(empresa: str, fecha: date, logo_bytes, d: dict, fourth_model: str = "Perplexity") -> bytes:
     prs      = Presentation(TEMPLATE_PATH)
     date_str = f"{MONTHS_ES[fecha.month]} {fecha.year}"
     gpt      = d["chatgpt_score"]
@@ -917,7 +917,8 @@ def generate_pptx(empresa: str, fecha: date, logo_bytes, d: dict) -> bytes:
     set_run(s, "Text 4",  f"{gpt}/100"); set_run(s, "Text 5",  model_label(gpt, "ChatGPT"))
     set_run(s, "Text 9",  f"{gem}/100"); set_run(s, "Text 10", model_label(gem, "Gemini"))
     set_run(s, "Text 14", f"{cla}/100"); set_run(s, "Text 15", model_label(cla, "Claude"))
-    set_run(s, "Text 19", f"{per}/100"); set_run(s, "Text 20", model_label(per, "Perplexity"))
+    set_run(s, "Text 18", fourth_model)
+    set_run(s, "Text 19", f"{per}/100"); set_run(s, "Text 20", model_label(per, fourth_model))
     set_run(s, "Text 21", f"Promedio: {avg}/100")
 
     # Slide 4 — Contexto competitivo (cajas más grandes, texto justificado)
@@ -1511,7 +1512,7 @@ with tab2:
             if GEMINI_KEY:
                 active_models["Gemini"] = geo_query_gemini
             if GROQ_KEY:
-                active_models["Groq"]   = geo_query_groq
+                active_models["Grok"]   = geo_query_groq
 
             all_responses = {m: {} for m in active_models}
             scores        = {}
@@ -1554,7 +1555,7 @@ with tab2:
                     analysis["chatgpt_score"]    = scores.get("ChatGPT", 0)
                     analysis["gemini_score"]     = scores.get("Gemini", 0)
                     analysis["claude_score"]     = scores.get("Claude", 0)
-                    analysis["perplexity_score"] = scores.get("Groq", 0)
+                    analysis["perplexity_score"] = scores.get("Grok", 0)
                     st.session_state["geo_analysis"]     = analysis
                     st.session_state["geo_scores"]       = scores
                     st.session_state["geo_score_global"] = score_global
@@ -1668,7 +1669,7 @@ with tab2:
             with st.spinner("Generando PPTX..."):
                 try:
                     logo_bytes = logo_geo.getvalue() if logo_geo else None
-                    pptx_bytes = generate_pptx(empresa_geo.strip(), fecha_geo, logo_bytes, analysis)
+                    pptx_bytes = generate_pptx(empresa_geo.strip(), fecha_geo, logo_bytes, analysis, fourth_model="Grok / Llama")
                     filename   = f"Auditoria_GEO_{empresa_geo.strip().replace(' ', '_')}_{fecha_geo.strftime('%Y%m')}.pptx"
                 except Exception as e:
                     st.error(f"Error generando PPTX: {e}")
