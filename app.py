@@ -667,9 +667,9 @@ def build_list_slide(s, title: str, subtitle: str, items: list):
     r.font.color.rgb = DARK
 
     # Ítems numerados
-    CD = 370000   # diámetro del círculo
-    IT = 1260000  # top del primer ítem
-    IS = 870000   # paso vertical entre ítems
+    CD = 370000    # diámetro del círculo
+    IT = 1100000   # top del primer ítem
+    IS = 1010000   # paso vertical entre ítems
     TL = ML + CD + 130000  # left del texto
 
     for i, text in enumerate(items[:4]):
@@ -692,14 +692,14 @@ def build_list_slide(s, title: str, subtitle: str, items: list):
         r.font.bold = True
 
         # Texto del ítem
-        txb = s.shapes.add_textbox(Emu(TL), Emu(top), Emu(SW - TL - ML), Emu(CD + 60000))
+        txb = s.shapes.add_textbox(Emu(TL), Emu(top), Emu(SW - TL - ML), Emu(CD + 260000))
         tf2 = txb.text_frame
         tf2.word_wrap = True
         tf2.vertical_anchor = MSO_ANCHOR.MIDDLE
         p = tf2.paragraphs[0]
-        p.text = text[:160]
+        p.text = text[:280]
         r = p.runs[0]
-        r.font.size = Pt(13)
+        r.font.size = Pt(12)
         r.font.color.rgb = DARK
 
 
