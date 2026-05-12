@@ -1125,24 +1125,31 @@ def geo_mentions(brand: str, text: str) -> bool:
     return any(c in bl for c in checks)
 
 
-_NO_KNOWLEDGE = [
-    "no conozco", "no tengo información", "no tengo informacion",
-    "no la conozco", "no estoy familiarizado", "no tengo datos",
-    "no dispongo", "no tengo conocimiento", "desconozco",
-    "i don't know", "i do not know", "not familiar",
-    "no information", "no encuentro información",
-    "no puedo encontrar información", "no me es familiar",
-    "no tengo acceso", "no tengo referencias", "no aparece",
-    "no he encontrado", "no existe información",
+# Señales FUERTES de desconocimiento — solo frases inequívocas en la apertura de la respuesta
+_STRONG_DENIAL = [
+    "no conozco", "no la conozco", "no estoy familiarizado",
+    "desconozco esta empresa", "no tengo conocimiento de esta",
+    "i don't know", "i do not know", "not familiar with",
+    "no tengo información sobre esta empresa",
+    "no tengo información acerca de esta empresa",
+    "no tengo datos sobre esta empresa",
 ]
 
 
-def _model_knows(text: str) -> bool:
-    """Devuelve True si el modelo responde con contenido real (no dice que no conoce la marca)."""
+def _model_knows(text: str, min_chars: int = 80) -> bool:
+    """
+    Devuelve True si el modelo dio una respuesta sustancial sobre la marca.
+    Criterios:
+    1. Respuesta de al menos `min_chars` caracteres (respuesta real, no "no sé")
+    2. Sin negación explícita en las primeras 200 chars (apertura de la respuesta)
+    """
     if not text or "[ERROR" in text:
         return False
-    low = text.lower()
-    return not any(sig in low for sig in _NO_KNOWLEDGE)
+    text = text.strip()
+    if len(text) < min_chars:
+        return False
+    opening = text[:200].lower()
+    return not any(sig in opening for sig in _STRONG_DENIAL)
 
 
 def geo_score_from_sections(brand: str, sections: dict) -> int:
