@@ -1125,12 +1125,59 @@ def geo_mentions(brand: str, text: str) -> bool:
     return any(c in bl for c in checks)
 
 
+_NO_KNOWLEDGE = [
+    "no conozco", "no tengo información", "no tengo informacion",
+    "no la conozco", "no estoy familiarizado", "no tengo datos",
+    "no dispongo", "no tengo conocimiento", "desconozco",
+    "i don't know", "i do not know", "not familiar",
+    "no information", "no encuentro información",
+    "no puedo encontrar información", "no me es familiar",
+    "no tengo acceso", "no tengo referencias", "no aparece",
+    "no he encontrado", "no existe información",
+]
+
+
+def _model_knows(text: str) -> bool:
+    """Devuelve True si el modelo responde con contenido real (no dice que no conoce la marca)."""
+    if not text or "[ERROR" in text:
+        return False
+    low = text.lower()
+    return not any(sig in low for sig in _NO_KNOWLEDGE)
+
+
 def geo_score_from_sections(brand: str, sections: dict) -> int:
-    """Calcula score basado en cuántas secciones mencionan la marca."""
+    """
+    Score de visibilidad GEO por modelo (0-100):
+
+    40 pts — competitors:   marca mencionada espontáneamente (pregunta genérica sin nombrarla)
+    30 pts — reputation:    modelo demuestra conocimiento real de la marca
+    15 pts — strengths:     modelo da fortalezas específicas (no dice "no la conozco")
+    15 pts — opportunities: modelo da oportunidades específicas (no dice "no la conozco")
+    """
     if not sections:
         return 0
-    hits = sum(1 for text in sections.values() if geo_mentions(brand, text))
-    return round(hits / len(sections) * 100)
+
+    score = 0
+
+    # 40 pts — mención espontánea en competitors
+    competitors_resp = sections.get("competitors", "")
+    if competitors_resp and "[ERROR" not in competitors_resp:
+        if geo_mentions(brand, competitors_resp):
+            score += 40
+
+    # 30 pts — conocimiento real en reputation
+    if _model_knows(sections.get("reputation", "")):
+        score += 30
+
+    # 15 pts — fortalezas específicas
+    if _model_knows(sections.get("strengths", "")):
+        score += 15
+
+    # 15 pts — oportunidades específicas
+    if _model_knows(sections.get("opportunities", "")):
+        score += 15
+
+    return min(score, 100)
 
 
 def geo_analyze_results(brand: str, sector: str, pais: str, scores: dict, all_responses: dict, observaciones: str = "", ahrefs_img: bytes = None) -> dict:
