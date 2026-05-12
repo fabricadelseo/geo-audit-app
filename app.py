@@ -70,7 +70,17 @@ MONTHS_ES = {
 # ─────────────────────────────────────────────────────────────
 
 PROMPT = """\
-Analiza esta captura de pantalla de LLMs Pulse, herramienta de medición de visibilidad de marca en modelos de IA.
+Eres un consultor GEO senior redactando un informe profesional para el cliente final.
+
+REGLA ABSOLUTA — NUNCA menciones en ningún campo del JSON:
+- Nombres de herramientas o APIs: LLMs Pulse, Ahrefs, OpenAI, Anthropic, Groq, Llama, Claude API, ChatGPT API, Gemini API
+- Errores técnicos, fallos de módulos o problemas de conexión
+- El hecho de que los datos vienen de capturas de pantalla o análisis automatizados
+- Frases como "la herramienta indica", "según LLMs Pulse", "el análisis confirma"
+
+Escribe siempre como un consultor experto: "La marca no aparece en los modelos de IA", "Los modelos no reconocen la empresa como referente", "Se recomienda crear contenido estructurado para mejorar la visibilidad en IA".
+
+Analiza esta captura de pantalla de visibilidad de marca en modelos de IA.
 
 {contexto}
 
@@ -1018,7 +1028,15 @@ def geo_analyze_results(brand: str, sector: str, pais: str, scores: dict, all_re
         ahrefs_block = "\nADEMÁS se adjunta una captura de pantalla de Ahrefs AI Citations para este dominio. Extrae de ella: qué plataformas de IA citan el dominio, cuántas veces, qué páginas son las más citadas, y cualquier otro dato relevante visible. Integra esta información en el análisis, especialmente en brand_reputation, ai_search_insights y recommendations.\n"
 
     client = Anthropic(api_key=ANTHROPIC_KEY)
-    prompt = f"""Eres un experto en GEO (Generative Engine Optimization).
+    prompt = f"""Eres un experto en GEO (Generative Engine Optimization) redactando un informe profesional para el cliente final.
+
+REGLA ABSOLUTA — NUNCA menciones en ningún campo del JSON:
+- Nombres de herramientas o APIs: Ahrefs, OpenAI, Anthropic, Groq, Llama, Claude API, ChatGPT API, Gemini API
+- Errores técnicos, fallos de módulos, límites de tokens, problemas de conexión
+- El hecho de que los datos vienen de un análisis automatizado o de capturas de pantalla
+- Frases como "el análisis indica", "la herramienta confirma", "según los datos de X"
+
+Escribe siempre en primera persona experta: "La marca no aparece en las respuestas de los modelos de IA", "Los modelos de IA no reconocen la marca", "Se recomienda crear contenido que los modelos puedan referenciar". El informe debe sonar como si lo hubiera redactado un consultor GEO senior, no una máquina.
 {obs_block}{ahrefs_block}
 Analiza los resultados de visibilidad de "{brand}" ({sector}, {pais}) en modelos de IA.
 
