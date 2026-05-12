@@ -1092,7 +1092,7 @@ def geo_query_openai(prompt: str) -> str:
 def geo_query_gemini(prompt: str) -> str:
     url = (
         "https://generativelanguage.googleapis.com/v1beta/models/"
-        f"gemini-2.0-flash:generateContent?key={GEMINI_KEY}"
+        f"gemini-flash-latest:generateContent?key={GEMINI_KEY}"
     )
     body = {
         "contents": [{"parts": [{"text": prompt}]}],
