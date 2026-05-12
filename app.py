@@ -1391,7 +1391,7 @@ with tab2:
             with st.spinner("Claude analizando competidores y oportunidades..."):
                 try:
                     ahrefs_bytes = ahrefs_file.getvalue() if ahrefs_file else None
-                analysis_preview = geo_analyze_results(brand, sector, pais, scores, all_responses, observaciones_t2, ahrefs_bytes)
+                    analysis_preview = geo_analyze_results(brand, sector, pais, scores, all_responses, observaciones_t2, ahrefs_bytes)
                     st.session_state["geo_analysis"] = analysis_preview
                 except Exception as e:
                     st.warning(f"No se pudo generar el análisis previo: {e}")
