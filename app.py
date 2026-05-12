@@ -425,13 +425,12 @@ def replace_logo(slide, name: str, img_bytes: bytes):
         else:           # más alto que ancho
             new_h = max_size
             new_w = int(max_size * ratio)
-        # Centrar dentro del placeholder original
+        # Posicionar: centrado horizontalmente, en el tercio superior del panel
         orig_left = shape.left
-        orig_top  = shape.top
         shape.width  = Emu(new_w)
         shape.height = Emu(new_h)
         shape.left   = orig_left + (max_size - new_w) // 2
-        shape.top    = orig_top  + (max_size - new_h) // 2
+        shape.top    = Emu(1400000)  # tercio superior del panel navy
     except Exception:
         pass  # si falla, deja las dimensiones originales
 
@@ -704,6 +703,67 @@ def build_list_slide(s, title: str, subtitle: str, items: list):
 
 
 # ─────────────────────────────────────────────────────────────
+# HELPER — slide próximos pasos (slide 10)
+# ─────────────────────────────────────────────────────────────
+
+def _build_steps_slide(s, steps: list):
+    from pptx.dml.color import RGBColor
+    from pptx.util import Pt
+    from pptx.enum.text import PP_ALIGN, MSO_ANCHOR
+
+    NAVY   = RGBColor(0x0F, 0x1B, 0x3D)
+    ORANGE = RGBColor(0xFF, 0x66, 0x00)
+    WHITE  = RGBColor(0xFF, 0xFF, 0xFF)
+    LGRAY  = RGBColor(0xCC, 0xD6, 0xE8)
+    SW, SH = 9144000, 5143500
+
+    sp_tree = s.shapes._spTree
+    for child in list(sp_tree)[2:]:
+        sp_tree.remove(child)
+
+    # Fondo navy
+    bg = s.shapes.add_shape(1, Emu(0), Emu(0), Emu(SW), Emu(SH))
+    bg.fill.solid(); bg.fill.fore_color.rgb = NAVY; bg.line.fill.background()
+
+    # Título
+    ML = 500000
+    tb = s.shapes.add_textbox(Emu(ML), Emu(100000), Emu(SW - 2*ML), Emu(500000))
+    tb.text_frame.word_wrap = False
+    p = tb.text_frame.paragraphs[0]; p.text = "Próximos pasos"
+    r = p.runs[0]; r.font.size = Pt(40); r.font.bold = True; r.font.color.rgb = WHITE
+
+    NUM_W  = 260000
+    ROW_T  = 720000
+    ROW_H  = 980000
+
+    for i, step in enumerate(steps[:4]):
+        top   = ROW_T + i * ROW_H
+        title = step.get("title", "")[:70]
+        desc  = step.get("desc", "")[:180]
+
+        # Número naranja
+        ntb = s.shapes.add_textbox(Emu(ML), Emu(top), Emu(NUM_W), Emu(ROW_H))
+        ntb.text_frame.vertical_anchor = MSO_ANCHOR.MIDDLE
+        p = ntb.text_frame.paragraphs[0]; p.text = str(i + 1)
+        r = p.runs[0]; r.font.size = Pt(36); r.font.bold = True; r.font.color.rgb = ORANGE
+
+        TEXT_L = ML + NUM_W + 120000
+        TEXT_W = SW - TEXT_L - ML
+
+        # Título blanco
+        ttb = s.shapes.add_textbox(Emu(TEXT_L), Emu(top + 80000), Emu(TEXT_W), Emu(280000))
+        ttb.text_frame.word_wrap = True
+        p = ttb.text_frame.paragraphs[0]; p.text = title
+        r = p.runs[0]; r.font.size = Pt(16); r.font.bold = True; r.font.color.rgb = WHITE
+
+        # Descripción gris claro itálica
+        dtb = s.shapes.add_textbox(Emu(TEXT_L), Emu(top + 360000), Emu(TEXT_W), Emu(540000))
+        dtb.text_frame.word_wrap = True
+        p = dtb.text_frame.paragraphs[0]; p.text = desc
+        r = p.runs[0]; r.font.size = Pt(13); r.font.italic = True; r.font.color.rgb = LGRAY
+
+
+# ─────────────────────────────────────────────────────────────
 # HELPER — slide recomendaciones (slide 9)
 # ─────────────────────────────────────────────────────────────
 
@@ -934,13 +994,8 @@ def generate_pptx(empresa: str, fecha: date, logo_bytes, d: dict) -> bytes:
     # Slide 9 — Recomendaciones (diseño dinámico)
     build_recommendations_slide(prs.slides[8], d.get("recommendations", []))
 
-    # Slide 10 — Próximos pasos
-    s = prs.slides[9]
-    for i, (tn, dn) in enumerate([("Text 2","Text 3"),("Text 5","Text 6"),("Text 8","Text 9"),("Text 11","Text 12")]):
-        if i < len(d["steps"]):
-            st_ = d["steps"][i]
-            if st_.get("title"): set_run(s, tn, st_["title"][:55])
-            if st_.get("desc"):  set_run(s, dn, st_["desc"][:95])
+    # Slide 10 — Próximos pasos (diseño dinámico)
+    _build_steps_slide(prs.slides[9], d.get("steps", []))
 
     # Slide 11 — Logo
     if logo_bytes:
