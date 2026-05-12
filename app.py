@@ -1408,134 +1408,143 @@ with tab2:
                         st.markdown(f"**{section_key.upper()}**")
                         st.write(resp)
 
-            # Paso 4b — Análisis rápido: competidores y oportunidades
-            st.divider()
-            with st.spinner("Claude analizando competidores y oportunidades..."):
+            # Guardar todo en session_state para persistir entre reruns
+            with st.spinner("Claude generando el informe completo..."):
                 try:
                     ahrefs_bytes = ahrefs_file.getvalue() if ahrefs_file else None
-                    analysis_preview = geo_analyze_results(brand, sector, pais, scores, all_responses, observaciones_t2, ahrefs_bytes)
-                    st.session_state["geo_analysis"] = analysis_preview
+                    analysis = geo_analyze_results(brand, sector, pais, scores, all_responses, observaciones_t2, ahrefs_bytes)
+                    analysis["score_global"]     = score_global
+                    analysis["chatgpt_score"]    = scores.get("ChatGPT", 0)
+                    analysis["gemini_score"]     = scores.get("Gemini", 0)
+                    analysis["claude_score"]     = scores.get("Claude", 0)
+                    analysis["perplexity_score"] = scores.get("Groq", 0)
+                    st.session_state["geo_analysis"]     = analysis
+                    st.session_state["geo_scores"]       = scores
+                    st.session_state["geo_score_global"] = score_global
+                    st.session_state["geo_brand"]        = brand
                 except Exception as e:
-                    st.warning(f"No se pudo generar el análisis previo: {e}")
-                    analysis_preview = None
+                    st.error(f"Error generando el informe: {e}")
+                    import traceback
+                    with st.expander("Detalle"):
+                        st.code(traceback.format_exc())
 
-            if analysis_preview:
-                comps       = analysis_preview.get("competitors", [])
-                opps        = analysis_preview.get("opportunities", [])
-                strengths   = analysis_preview.get("strengths", [])
-                reputation  = analysis_preview.get("brand_reputation", {})
-                insights    = analysis_preview.get("ai_search_insights", [])
-                s_prompts   = analysis_preview.get("sample_prompts", [])
-                recs        = analysis_preview.get("recommendations", [])
+    # ── Informe y PPTX (fuera del botón Analizar, persiste entre reruns) ──
+    if st.session_state.get("geo_analysis"):
+        analysis     = st.session_state["geo_analysis"]
+        scores_ss    = st.session_state.get("geo_scores", {})
+        score_global = st.session_state.get("geo_score_global", 0)
+        brand_ss     = st.session_state.get("geo_brand", "")
 
-                # 1. Top Competitors
-                st.subheader("Top Competitors")
-                if comps:
-                    cols_c = st.columns(len(comps))
-                    for i, c in enumerate(comps):
-                        with cols_c[i]:
-                            stars = "⭐" * max(1, min(5, c.get("stars", 3)))
-                            st.markdown(f"**{c.get('name', '')}**")
-                            st.write(stars)
-                            st.caption(c.get("desc", ""))
-                else:
-                    st.info("No se detectaron competidores en las respuestas.")
+        comps      = analysis.get("competitors", [])
+        opps       = analysis.get("opportunities", [])
+        strengths  = analysis.get("strengths", [])
+        reputation = analysis.get("brand_reputation", {})
+        insights   = analysis.get("ai_search_insights", [])
+        s_prompts  = analysis.get("sample_prompts", [])
+        recs       = analysis.get("recommendations", [])
 
-                st.divider()
+        st.divider()
 
-                # 2. Brand Reputation
-                st.subheader("Brand Reputation")
-                tone = reputation.get("tone", "")
-                tone_color = {"Ausente": "🔴", "Negativa": "🔴", "Neutra": "🟡", "Positiva": "🟢"}.get(tone, "⚪")
-                st.markdown(f"{tone_color} **{tone}** — {reputation.get('summary', '')}")
-                attrs = reputation.get("attributes", [])
-                if attrs:
-                    st.write(" · ".join(f"`{a}`" for a in attrs))
+        # Scores
+        st.subheader("Visibilidad por modelo")
+        score_cols = st.columns(len(scores_ss) + 1)
+        for i, (model, s) in enumerate(scores_ss.items()):
+            score_cols[i].metric(model, f"{s}/100")
+        score_cols[-1].metric("Score Global", f"{score_global}/100")
 
-                st.divider()
+        st.divider()
 
-                # 3. Key Strengths
-                st.subheader("Key Strengths")
-                cols_s = st.columns(2)
-                for i, s in enumerate(strengths):
-                    cols_s[i % 2].markdown(f"✅ {s}")
+        # 1. Top Competitors
+        st.subheader("Top Competitors")
+        if comps:
+            cols_c = st.columns(len(comps))
+            for i, c in enumerate(comps):
+                with cols_c[i]:
+                    stars = "⭐" * max(1, min(5, c.get("stars", 3)))
+                    st.markdown(f"**{c.get('name', '')}**")
+                    st.write(stars)
+                    st.caption(c.get("desc", ""))
+        else:
+            st.info("No se detectaron competidores en las respuestas.")
 
-                st.divider()
+        st.divider()
 
-                # 4. Improvement Opportunities
-                st.subheader("Improvement Opportunities")
-                cols_o = st.columns(2)
-                for i, opp in enumerate(opps):
-                    cols_o[i % 2].markdown(f"🔧 {opp}")
+        # 2. Brand Reputation
+        st.subheader("Brand Reputation")
+        tone = reputation.get("tone", "")
+        tone_color = {"Ausente": "🔴", "Negativa": "🔴", "Neutra": "🟡", "Positiva": "🟢"}.get(tone, "⚪")
+        st.markdown(f"{tone_color} **{tone}** — {reputation.get('summary', '')}")
+        attrs = reputation.get("attributes", [])
+        if attrs:
+            st.write(" · ".join(f"`{a}`" for a in attrs))
 
-                st.divider()
+        st.divider()
 
-                # 5. Sample Search Prompts
-                st.subheader("Sample Search Prompts")
-                st.caption("Búsquedas donde debería aparecer la marca pero no aparece:")
-                for p in s_prompts:
-                    st.markdown(f"💬 _{p}_")
+        # 3. Key Strengths
+        st.subheader("Key Strengths")
+        cols_s = st.columns(2)
+        for i, s in enumerate(strengths):
+            cols_s[i % 2].markdown(f"✅ {s}")
 
-                st.divider()
+        st.divider()
 
-                # 6. AI Search Insights
-                st.subheader("AI Search Insights")
-                vis_color = {"Nula": "🔴", "Baja": "🟠", "Media": "🟡", "Alta": "🟢"}
-                for ins in insights:
-                    icon = vis_color.get(ins.get("visibility", ""), "⚪")
-                    st.markdown(f"{icon} **{ins.get('model', '')}** ({ins.get('visibility', '')}) — {ins.get('insight', '')}")
+        # 4. Improvement Opportunities
+        st.subheader("Improvement Opportunities")
+        cols_o = st.columns(2)
+        for i, opp in enumerate(opps):
+            cols_o[i % 2].markdown(f"🔧 {opp}")
 
-                st.divider()
+        st.divider()
 
-                # 7. Recommendations
-                st.subheader("Recommendations")
-                pri_label = {3: "🔴 Alta", 2: "🟡 Media", 1: "🟢 Baja"}
-                for r in recs:
-                    st.markdown(f"{pri_label.get(r.get('priority', 2), '')} **{r.get('title', '')}** — {r.get('desc', '')}")
+        # 5. Sample Search Prompts
+        st.subheader("Sample Search Prompts")
+        st.caption("Búsquedas donde debería aparecer la marca pero no aparece:")
+        for p in s_prompts:
+            st.markdown(f"💬 _{p}_")
 
-            # Paso 5 — Generar PPTX
-            st.divider()
-            st.subheader("Generar auditoría PPTX")
-            col_e, col_f = st.columns(2)
-            empresa_geo = col_e.text_input("Nombre empresa", value=brand, key="empresa_geo")
-            fecha_geo   = col_f.date_input("Fecha", value=date.today(), key="fecha_geo")
+        st.divider()
 
-            if st.button("Generar PPTX con estos resultados", key="btn_pptx_geo"):
-                result = st.session_state.get("geo_analysis")
-                if not result:
-                    with st.spinner("Claude generando análisis cualitativo..."):
-                        try:
-                            ahrefs_bytes = ahrefs_file.getvalue() if ahrefs_file else None
-                            result = geo_analyze_results(brand, sector, pais, scores, all_responses, observaciones_t2, ahrefs_bytes)
-                        except Exception as e:
-                            st.error(f"Error en análisis: {e}")
-                            import traceback
-                            with st.expander("Detalle"):
-                                st.code(traceback.format_exc())
-                            st.stop()
-                result["score_global"]     = score_global
-                result["chatgpt_score"]    = scores.get("ChatGPT", 0)
-                result["gemini_score"]     = scores.get("Gemini", 0)
-                result["claude_score"]     = scores.get("Claude", 0)
-                result["perplexity_score"] = scores.get("Groq", 0)
+        # 6. AI Search Insights
+        st.subheader("AI Search Insights")
+        vis_color = {"Nula": "🔴", "Baja": "🟠", "Media": "🟡", "Alta": "🟢"}
+        for ins in insights:
+            icon = vis_color.get(ins.get("visibility", ""), "⚪")
+            st.markdown(f"{icon} **{ins.get('model', '')}** ({ins.get('visibility', '')}) — {ins.get('insight', '')}")
 
-                with st.spinner("Generando PPTX..."):
-                    try:
-                        logo_bytes = logo_geo.getvalue() if logo_geo else None
-                        pptx_bytes = generate_pptx(empresa_geo.strip(), fecha_geo, logo_bytes, result)
-                        filename   = f"Auditoria_GEO_{empresa_geo.strip().replace(' ', '_')}_{fecha_geo.strftime('%Y%m')}.pptx"
-                    except Exception as e:
-                        st.error(f"Error generando PPTX: {e}")
-                        import traceback
-                        with st.expander("Detalle"):
-                            st.code(traceback.format_exc())
-                        st.stop()
+        st.divider()
 
-                st.download_button(
-                    label="Descargar PPTX",
-                    data=pptx_bytes,
-                    file_name=filename,
-                    mime="application/vnd.openxmlformats-officedocument.presentationml.presentation",
-                    use_container_width=True,
-                    type="primary",
-                )
+        # 7. Recommendations
+        st.subheader("Recommendations")
+        pri_label = {3: "🔴 Alta", 2: "🟡 Media", 1: "🟢 Baja"}
+        for r in recs:
+            st.markdown(f"{pri_label.get(r.get('priority', 2), '')} **{r.get('title', '')}** — {r.get('desc', '')}")
+
+        st.divider()
+
+        # Generar PPTX
+        st.subheader("Generar auditoría PPTX")
+        col_e, col_f = st.columns(2)
+        empresa_geo = col_e.text_input("Nombre empresa", value=brand_ss, key="empresa_geo")
+        fecha_geo   = col_f.date_input("Fecha", value=date.today(), key="fecha_geo")
+
+        if st.button("Generar PPTX con estos resultados", key="btn_pptx_geo"):
+            with st.spinner("Generando PPTX..."):
+                try:
+                    logo_bytes = logo_geo.getvalue() if logo_geo else None
+                    pptx_bytes = generate_pptx(empresa_geo.strip(), fecha_geo, logo_bytes, analysis)
+                    filename   = f"Auditoria_GEO_{empresa_geo.strip().replace(' ', '_')}_{fecha_geo.strftime('%Y%m')}.pptx"
+                except Exception as e:
+                    st.error(f"Error generando PPTX: {e}")
+                    import traceback
+                    with st.expander("Detalle"):
+                        st.code(traceback.format_exc())
+                    st.stop()
+
+            st.download_button(
+                label="Descargar PPTX",
+                data=pptx_bytes,
+                file_name=filename,
+                mime="application/vnd.openxmlformats-officedocument.presentationml.presentation",
+                use_container_width=True,
+                type="primary",
+            )
