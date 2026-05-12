@@ -10,6 +10,7 @@ import json
 import copy
 import base64
 import requests
+import concurrent.futures
 import streamlit as st
 from datetime import date
 from anthropic import Anthropic
@@ -27,9 +28,21 @@ TEMPLATE_PATH = os.path.join(BASE_DIR, "template.pptx")
 
 # API key: Streamlit Secrets (cloud) o variable de entorno (local)
 try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
+
+try:
     ANTHROPIC_KEY = st.secrets["ANTHROPIC_API_KEY"]
+    OPENAI_KEY    = st.secrets.get("OPENAI_API_KEY",  os.environ.get("OPENAI_API_KEY", ""))
+    GEMINI_KEY    = st.secrets.get("GEMINI_API_KEY",  os.environ.get("GEMINI_API_KEY", ""))
+    GROQ_KEY      = st.secrets.get("GROQ_API_KEY",    os.environ.get("GROQ_API_KEY", ""))
 except Exception:
     ANTHROPIC_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
+    OPENAI_KEY    = os.environ.get("OPENAI_API_KEY", "")
+    GEMINI_KEY    = os.environ.get("GEMINI_API_KEY", "")
+    GROQ_KEY      = os.environ.get("GROQ_API_KEY", "")
 EMU_PER_SCORE_PT = 54864
 
 MONTHS_ES = {
@@ -206,11 +219,13 @@ def fetch_report_data_from_url(url: str) -> dict:
 # CLAUDE API
 # ─────────────────────────────────────────────────────────────
 
-def analyze_with_claude(image_bytes: bytes, empresa: str, competitors_data: list, recommendations_data: list, opportunities_data: list) -> dict:
+def analyze_with_claude(image_bytes: bytes, empresa: str, competitors_data: list, recommendations_data: list, opportunities_data: list, observaciones: str = "") -> dict:
     client   = Anthropic(api_key=ANTHROPIC_KEY)
     media_type = "image/png" if image_bytes[:4] == b"\x89PNG" else "image/jpeg"
     b64      = base64.standard_b64encode(image_bytes).decode("utf-8")
     contexto = f"La empresa auditada es: {empresa.strip()}." if empresa.strip() else ""
+    if observaciones.strip():
+        contexto += f" OBSERVACIONES DEL CLIENTE (tenlas muy en cuenta para el análisis y las recomendaciones): {observaciones.strip()}"
     if competitors_data:
         partes = []
         for i, c in enumerate(competitors_data, 1):
@@ -850,149 +865,477 @@ def generate_pptx(empresa: str, fecha: date, logo_bytes, d: dict) -> bytes:
 
 
 # ─────────────────────────────────────────────────────────────
+# ESCÁNER GEO — FUNCIONES
+# ─────────────────────────────────────────────────────────────
+
+def geo_detect_brand(domain: str) -> dict:
+    client = Anthropic(api_key=ANTHROPIC_KEY)
+    r = client.messages.create(
+        model="claude-haiku-4-5-20251001",
+        max_tokens=200,
+        messages=[{"role": "user", "content": (
+            f"Dado el dominio: {domain}\n"
+            "Devuelve SOLO este JSON (sin texto extra):\n"
+            '{"brand": "<nombre comercial>", "sector": "<sector en 3-4 palabras>", "pais": "<país en español>"}\n'
+            'Ejemplo: {"brand": "La Fabrica del SEO", "sector": "agencia SEO", "pais": "Espana"}'
+        )}]
+    )
+    raw = r.content[0].text.strip()
+    if "```" in raw:
+        raw = raw.split("```")[1].split("```")[0].strip()
+        if raw.startswith("json"):
+            raw = raw[4:].strip()
+    return json.loads(raw)
+
+
+def geo_generate_prompts(brand: str, sector: str, pais: str, n: int = 5) -> list:
+    base = [
+        f"¿Qué empresas de {sector} recomiendas en {pais}?",
+        f"¿Cuál es la mejor empresa de {sector} en {pais}?",
+        f"Necesito contratar {sector} en {pais}, ¿qué opciones existen?",
+        f"¿Qué empresas son referentes en {sector} en {pais}?",
+        f"Dame un listado de empresas de {sector} reconocidas en {pais}.",
+        f"¿Qué agencias o empresas de {sector} tienen más reputación en {pais}?",
+        f"Recomiéndame una empresa de {sector} en {pais} con buena reputación.",
+    ]
+    return base[:n]
+
+
+def _query_safe(fn, prompt: str) -> str:
+    try:
+        return fn(prompt)
+    except Exception as e:
+        return f"[ERROR: {e}]"
+
+
+def geo_query_claude(prompt: str) -> str:
+    client = Anthropic(api_key=ANTHROPIC_KEY)
+    r = client.messages.create(
+        model="claude-haiku-4-5-20251001",
+        max_tokens=500,
+        messages=[{"role": "user", "content": prompt}]
+    )
+    return r.content[0].text
+
+
+def geo_query_openai(prompt: str) -> str:
+    from openai import OpenAI
+    client = OpenAI(api_key=OPENAI_KEY)
+    r = client.chat.completions.create(
+        model="gpt-4o-mini",
+        max_tokens=500,
+        messages=[{"role": "user", "content": prompt}]
+    )
+    return r.choices[0].message.content
+
+
+def geo_query_gemini(prompt: str) -> str:
+    url = (
+        "https://generativelanguage.googleapis.com/v1beta/models/"
+        f"gemini-1.5-flash:generateContent?key={GEMINI_KEY}"
+    )
+    body = {
+        "contents": [{"parts": [{"text": prompt}]}],
+        "generationConfig": {"maxOutputTokens": 500},
+    }
+    r = requests.post(url, json=body, timeout=30)
+    r.raise_for_status()
+    return r.json()["candidates"][0]["content"]["parts"][0]["text"]
+
+
+def geo_query_groq(prompt: str) -> str:
+    from openai import OpenAI
+    client = OpenAI(api_key=GROQ_KEY, base_url="https://api.groq.com/openai/v1")
+    r = client.chat.completions.create(
+        model="llama-3.3-70b-versatile",
+        max_tokens=500,
+        messages=[{"role": "user", "content": prompt}]
+    )
+    return r.choices[0].message.content
+
+
+def geo_mentions(brand: str, text: str) -> bool:
+    if "[ERROR" in text:
+        return False
+    bl = text.lower()
+    checks = [brand.lower()]
+    significant = [w for w in brand.lower().split() if len(w) > 3]
+    if significant:
+        checks.append(significant[0])
+    return any(c in bl for c in checks)
+
+
+def geo_score(brand: str, responses: list) -> int:
+    if not responses:
+        return 0
+    hits = sum(1 for r in responses if geo_mentions(brand, r))
+    return round(hits / len(responses) * 100)
+
+
+def geo_analyze_results(brand: str, sector: str, pais: str, scores: dict, all_responses: dict, observaciones: str = "") -> dict:
+    resps_text = ""
+    for model, resps in all_responses.items():
+        resps_text += f"\n\n=== {model} ===\n"
+        for i, r in enumerate(resps, 1):
+            resps_text += f"[P{i}] {r[:300]}\n"
+
+    obs_block = f"\nOBSERVACIONES DEL CLIENTE (tenlas muy en cuenta): {observaciones.strip()}\n" if observaciones.strip() else ""
+    client = Anthropic(api_key=ANTHROPIC_KEY)
+    prompt = f"""Eres un experto en GEO (Generative Engine Optimization).
+{obs_block}
+Analiza los resultados de visibilidad de "{brand}" ({sector}, {pais}) en modelos de IA:
+
+Scores:
+- Claude: {scores.get('Claude', 0)}/100
+- ChatGPT: {scores.get('ChatGPT', 0)}/100
+- Gemini: {scores.get('Gemini', 0)}/100
+- Groq/Llama: {scores.get('Groq', 0)}/100
+
+Respuestas de los modelos (extractos):
+{resps_text[:3000]}
+
+Devuelve SOLO este JSON:
+{{
+  "resumen": "<2-3 frases sobre el estado de visibilidad en IA>",
+  "competitive_desc": "<frase corta sobre posicion competitiva>",
+  "chatgpt_hallazgos": [
+    {{"title": "<hallazgo 1, max 40 chars>", "detail": "<2 lineas con \\n, max 160 chars>"}},
+    {{"title": "<hallazgo 2, max 40 chars>", "detail": "<2 lineas con \\n, max 160 chars>"}},
+    {{"title": "<hallazgo 3, max 40 chars>", "detail": "<2 lineas con \\n, max 160 chars>"}}
+  ],
+  "chatgpt_diagnosticos": [
+    {{"label": "Visibilidad ChatGPT", "value": "<Nula|Baja|Media|Alta>"}},
+    {{"label": "<diagnostico 2>", "value": "<valor>"}},
+    {{"label": "<diagnostico 3>", "value": "<valor>"}}
+  ],
+  "chatgpt_prioridad": "<ACCION PRIORITARIA EN MAYUSCULAS, max 55 chars>",
+  "gemini_hallazgos": [
+    {{"title": "<hallazgo 1, max 40 chars>", "detail": "<2 lineas con \\n, max 160 chars>"}},
+    {{"title": "<hallazgo 2, max 40 chars>", "detail": "<2 lineas con \\n, max 160 chars>"}},
+    {{"title": "<hallazgo 3, max 40 chars>", "detail": "<2 lineas con \\n, max 160 chars>"}}
+  ],
+  "gemini_diagnosticos": [
+    {{"label": "Visibilidad Gemini", "value": "<Nula|Baja|Media|Alta>"}},
+    {{"label": "<diagnostico 2>", "value": "<valor>"}},
+    {{"label": "<diagnostico 3>", "value": "<valor>"}}
+  ],
+  "gemini_prioridad": "<ACCION PRIORITARIA EN MAYUSCULAS, max 55 chars>",
+  "strengths": ["<fortaleza 1>", "<fortaleza 2>", "<fortaleza 3>", "<fortaleza 4>"],
+  "opportunities": ["<oportunidad 1>", "<oportunidad 2>", "<oportunidad 3>", "<oportunidad 4>"],
+  "recommendations": [
+    {{"title": "<accion 1, max 50 chars>", "desc": "<1 frase, max 90 chars>", "priority": 3}},
+    {{"title": "<accion 2, max 50 chars>", "desc": "<1 frase, max 90 chars>", "priority": 3}},
+    {{"title": "<accion 3, max 50 chars>", "desc": "<1 frase, max 90 chars>", "priority": 3}},
+    {{"title": "<accion 4, max 50 chars>", "desc": "<1 frase, max 90 chars>", "priority": 2}},
+    {{"title": "<accion 5, max 50 chars>", "desc": "<1 frase, max 90 chars>", "priority": 2}}
+  ],
+  "steps": [
+    {{"title": "Revisar hallazgos", "desc": "<1 frase, max 90 chars>"}},
+    {{"title": "Priorizar iniciativas", "desc": "<1 frase, max 90 chars>"}},
+    {{"title": "Implementar Quick Wins", "desc": "<1 frase, max 90 chars>"}},
+    {{"title": "Monitorear progreso", "desc": "<1 frase, max 90 chars>"}}
+  ],
+  "competitors": []
+}}"""
+
+    r = client.messages.create(
+        model="claude-sonnet-4-6",
+        max_tokens=3000,
+        messages=[{"role": "user", "content": prompt}]
+    )
+    raw = r.content[0].text.strip()
+    if "```json" in raw:
+        raw = raw.split("```json")[1].split("```")[0].strip()
+    elif "```" in raw:
+        raw = raw.split("```")[1].split("```")[0].strip()
+    return json.loads(raw)
+
+
+# ─────────────────────────────────────────────────────────────
 # UI
 # ─────────────────────────────────────────────────────────────
 
 st.set_page_config(page_title="Generador Auditoría GEO", page_icon="🔍", layout="wide")
 
 st.title("Generador de Auditorías GEO")
-st.caption("Rellena 4 datos → Claude analiza el screenshot → descarga el PPTX.")
 
-# ── SIDEBAR — solo 4 inputs ───────────────────────────────────
-with st.sidebar:
-    st.header("Datos de la auditoría")
+tab1, tab2 = st.tabs(["📊 Desde Screenshot (LLMs Pulse)", "🔍 Escáner GEO por Dominio"])
 
-    empresa   = st.text_input("Nombre de la empresa *", placeholder="Ej: Acme Corp")
-    fecha     = st.date_input("Fecha de auditoría", value=date.today())
-    logo_file = st.file_uploader("Logo de la empresa (opcional)", type=["jpg", "jpeg", "png"])
-    if logo_file:
-        st.image(logo_file, caption="Logo cargado", use_container_width=True)
+# ══════════════════════════════════════════════════════════════
+# TAB 1 — desde screenshot
+# ══════════════════════════════════════════════════════════════
+with tab1:
+    st.caption("Sube el screenshot de LLMs Pulse → Claude analiza → descarga el PPTX.")
 
-    st.divider()
-    pulse_file = st.file_uploader(
-        "Screenshot de LLMs Pulse *",
-        type=["jpg", "jpeg", "png"],
-        help="Captura de pantalla con los scores de visibilidad por modelo",
+    with st.sidebar:
+        st.header("Datos de la auditoría")
+
+        empresa   = st.text_input("Nombre de la empresa *", placeholder="Ej: Acme Corp")
+        fecha     = st.date_input("Fecha de auditoría", value=date.today())
+        logo_file = st.file_uploader("Logo de la empresa (opcional)", type=["jpg", "jpeg", "png"])
+        if logo_file:
+            st.image(logo_file, caption="Logo cargado", use_container_width=True)
+
+        st.divider()
+        pulse_file = st.file_uploader(
+            "Screenshot de LLMs Pulse *",
+            type=["jpg", "jpeg", "png"],
+            help="Captura de pantalla con los scores de visibilidad por modelo",
+        )
+
+        st.divider()
+        report_url = st.text_input(
+            "URL del informe LLMs Pulse (opcional)",
+            placeholder="https://llmpulse.ai/ai-visibility-report/...",
+            help="Si pegas la URL del informe, los competidores se extraen automáticamente.",
+        )
+
+        st.divider()
+        observaciones_t1 = st.text_area(
+            "Observaciones del cliente (opcional)",
+            placeholder="Ej: El cliente quiere potenciar su presencia en ChatGPT. Acaba de lanzar un nuevo servicio de auditoría técnica. Compite principalmente con X e Y en Madrid...",
+            height=150,
+            help="Claude usará estas notas para personalizar el análisis y las recomendaciones.",
+        )
+
+    col_img, col_action = st.columns([3, 2], gap="large")
+
+    with col_img:
+        if pulse_file:
+            st.subheader("Vista previa LLMs Pulse")
+            pulse_file.seek(0)
+            st.image(pulse_file, use_container_width=True)
+        else:
+            st.info("Sube el screenshot de LLMs Pulse en el sidebar para previsualizarlo aquí.")
+
+    with col_action:
+        st.subheader("Generar auditoría")
+
+        if empresa:
+            st.markdown(f"**Empresa:** {empresa}")
+        st.markdown(f"**Fecha:** {MONTHS_ES[fecha.month]} {fecha.year}")
+        if logo_file:
+            st.markdown("**Logo:** cargado")
+        if pulse_file:
+            st.markdown("**LLMs Pulse:** imagen cargada")
+
+        st.divider()
+
+        if st.button("Analizar y Generar PPTX", type="primary", use_container_width=True):
+            errors = []
+            if not empresa.strip():
+                errors.append("El nombre de la empresa es obligatorio.")
+            if not pulse_file:
+                errors.append("El screenshot de LLMs Pulse es obligatorio.")
+            if not ANTHROPIC_KEY:
+                errors.append("ANTHROPIC_API_KEY no configurada.")
+
+            if errors:
+                for e in errors:
+                    st.error(e)
+            else:
+                competitors_data     = []
+                recommendations_data = []
+                opportunities_data   = []
+                if report_url.strip():
+                    with st.spinner("Leyendo datos desde el informe LLMs Pulse..."):
+                        report_data = fetch_report_data_from_url(report_url.strip())
+                        competitors_data     = report_data.get("competitors", [])
+                        recommendations_data = report_data.get("recommendations", [])
+                        opportunities_data   = report_data.get("opportunities", [])
+                        msgs = []
+                        if competitors_data:
+                            msgs.append(f"Competidores: {', '.join(c['name'] for c in competitors_data)}")
+                        if recommendations_data:
+                            msgs.append(f"{len(recommendations_data)} recomendaciones extraídas")
+                        if opportunities_data:
+                            msgs.append(f"{len(opportunities_data)} oportunidades extraídas")
+                        if msgs:
+                            st.success(" · ".join(msgs))
+                        else:
+                            st.warning("No se pudieron extraer datos de la URL. Claude los generará desde el screenshot.")
+
+                with st.spinner("Claude analizando el screenshot..."):
+                    try:
+                        pulse_file.seek(0)
+                        result = analyze_with_claude(pulse_file.read(), empresa, competitors_data, recommendations_data, opportunities_data, observaciones_t1)
+                    except Exception as exc:
+                        st.error(f"Error al analizar la imagen: {exc}")
+                        import traceback
+                        with st.expander("Detalle"):
+                            st.code(traceback.format_exc())
+                        st.stop()
+
+                score = result.get("score_global", 0)
+                gpt   = result.get("chatgpt_score", 0)
+                gem   = result.get("gemini_score", 0)
+                cla   = result.get("claude_score", 0)
+                per   = result.get("perplexity_score", 0)
+
+                st.success(f"Análisis completado — Score global: **{score}/100**")
+                with st.expander("DEBUG: competidores extraídos por Claude"):
+                    st.json(result.get("competitors", "campo 'competitors' no encontrado"))
+                m1, m2 = st.columns(2)
+                m1.metric("ChatGPT", f"{gpt}/100")
+                m2.metric("Gemini",  f"{gem}/100")
+                m3, m4 = st.columns(2)
+                m3.metric("Claude",    f"{cla}/100")
+                m4.metric("Perplexity", f"{per}/100")
+
+                with st.spinner("Generando presentación..."):
+                    try:
+                        logo_bytes = logo_file.getvalue() if logo_file else None
+                        pptx_bytes = generate_pptx(empresa.strip(), fecha, logo_bytes, result)
+                        filename   = f"Auditoria_GEO_{empresa.strip().replace(' ', '_')}_{fecha.strftime('%Y%m')}.pptx"
+                    except Exception as exc:
+                        st.error(f"Error al generar el PPTX: {exc}")
+                        import traceback
+                        with st.expander("Detalle"):
+                            st.code(traceback.format_exc())
+                        st.stop()
+
+                st.download_button(
+                    label="Descargar PPTX",
+                    data=pptx_bytes,
+                    file_name=filename,
+                    mime="application/vnd.openxmlformats-officedocument.presentationml.presentation",
+                    use_container_width=True,
+                    type="primary",
+                )
+
+# ══════════════════════════════════════════════════════════════
+# TAB 2 — escáner GEO por dominio
+# ══════════════════════════════════════════════════════════════
+with tab2:
+    st.caption("Introduce un dominio → consultamos ChatGPT, Gemini, Claude y Llama → score de visibilidad → PPTX.")
+
+    col_d, col_cfg = st.columns([3, 1])
+    with col_d:
+        domain_input = st.text_input("Dominio de la empresa", placeholder="Ej: lafabricadelseo.com", key="domain_input")
+    with col_cfg:
+        n_prompts = st.slider("Prompts por modelo", min_value=3, max_value=7, value=5)
+
+    logo_geo = st.file_uploader("Logo empresa (opcional, para el PPTX)", type=["jpg", "jpeg", "png"], key="logo_geo")
+
+    observaciones_t2 = st.text_area(
+        "Observaciones del cliente (opcional)",
+        placeholder="Ej: El cliente quiere potenciar su presencia en ChatGPT. Acaba de lanzar un nuevo servicio. Compite principalmente con X e Y...",
+        height=120,
+        key="obs_t2",
+        help="Claude usará estas notas para personalizar el análisis y las recomendaciones.",
     )
 
-    st.divider()
-    report_url = st.text_input(
-        "URL del informe LLMs Pulse (opcional)",
-        placeholder="https://llmpulse.ai/ai-visibility-report/...",
-        help="Si pegas la URL del informe, los competidores se extraen automáticamente y con precisión. Si no, Claude intentará leerlos del screenshot.",
-    )
-
-
-# ── MAIN ─────────────────────────────────────────────────────
-col_img, col_action = st.columns([3, 2], gap="large")
-
-with col_img:
-    if pulse_file:
-        st.subheader("Vista previa LLMs Pulse")
-        pulse_file.seek(0)
-        st.image(pulse_file, use_container_width=True)
-    else:
-        st.info("Sube el screenshot de LLMs Pulse en el sidebar para previsualizarlo aquí.")
-
-with col_action:
-    st.subheader("Generar auditoría")
-
-    if empresa:
-        st.markdown(f"**Empresa:** {empresa}")
-    st.markdown(f"**Fecha:** {MONTHS_ES[fecha.month]} {fecha.year}")
-    if logo_file:
-        st.markdown("**Logo:** cargado")
-    if pulse_file:
-        st.markdown("**LLMs Pulse:** imagen cargada")
-
-    st.divider()
-
-    if st.button("Analizar y Generar PPTX", type="primary", use_container_width=True):
+    if st.button("Analizar visibilidad GEO", type="primary", use_container_width=True):
         errors = []
-        if not empresa.strip():
-            errors.append("El nombre de la empresa es obligatorio.")
-        if not pulse_file:
-            errors.append("El screenshot de LLMs Pulse es obligatorio.")
+        if not domain_input.strip():
+            errors.append("Introduce un dominio.")
         if not ANTHROPIC_KEY:
             errors.append("ANTHROPIC_API_KEY no configurada.")
+        if not OPENAI_KEY:
+            errors.append("OPENAI_API_KEY no configurada.")
 
         if errors:
             for e in errors:
                 st.error(e)
         else:
-            # Paso 1 — Extraer competidores y recomendaciones de la URL
-            competitors_data     = []
-            recommendations_data = []
-            opportunities_data   = []
-            if report_url.strip():
-                with st.spinner("Leyendo datos desde el informe LLMs Pulse..."):
-                    report_data = fetch_report_data_from_url(report_url.strip())
-                    competitors_data     = report_data.get("competitors", [])
-                    recommendations_data = report_data.get("recommendations", [])
-                    opportunities_data   = report_data.get("opportunities", [])
-                    msgs = []
-                    if competitors_data:
-                        msgs.append(f"Competidores: {', '.join(c['name'] for c in competitors_data)}")
-                    if recommendations_data:
-                        msgs.append(f"{len(recommendations_data)} recomendaciones extraídas")
-                    if opportunities_data:
-                        msgs.append(f"{len(opportunities_data)} oportunidades extraídas")
-                    if msgs:
-                        st.success(" · ".join(msgs))
-                    else:
-                        st.warning("No se pudieron extraer datos de la URL. Claude los generará desde el screenshot.")
-
-            # Paso 2 — Claude analiza la imagen
-            with st.spinner("Claude analizando el screenshot..."):
+            # Paso 1 — Detectar marca y sector
+            with st.spinner("Detectando marca y sector..."):
                 try:
-                    pulse_file.seek(0)
-                    result = analyze_with_claude(pulse_file.read(), empresa, competitors_data, recommendations_data, opportunities_data)
-                except Exception as exc:
-                    st.error(f"Error al analizar la imagen: {exc}")
-                    import traceback
-                    with st.expander("Detalle"):
-                        st.code(traceback.format_exc())
+                    info   = geo_detect_brand(domain_input.strip())
+                    brand  = info.get("brand", domain_input)
+                    sector = info.get("sector", "empresa")
+                    pais   = info.get("pais", "España")
+                except Exception as e:
+                    st.error(f"Error detectando marca: {e}")
                     st.stop()
 
-            # Paso 2 — Mostrar scores extraídos
-            score = result.get("score_global", 0)
-            gpt   = result.get("chatgpt_score", 0)
-            gem   = result.get("gemini_score", 0)
-            cla   = result.get("claude_score", 0)
-            per   = result.get("perplexity_score", 0)
-            avg   = round((gpt + gem + cla + per) / 4)
+            st.info(f"**Marca:** {brand}  ·  **Sector:** {sector}  ·  **País:** {pais}")
 
-            st.success(f"Análisis completado — Score global: **{score}/100**")
-            with st.expander("DEBUG: competidores extraídos por Claude"):
-                st.json(result.get("competitors", "⚠️ campo 'competitors' no encontrado"))
-            m1, m2 = st.columns(2)
-            m1.metric("ChatGPT", f"{gpt}/100")
-            m2.metric("Gemini",  f"{gem}/100")
-            m3, m4 = st.columns(2)
-            m3.metric("Claude",    f"{cla}/100")
-            m4.metric("Perplexity", f"{per}/100")
+            # Paso 2 — Generar prompts
+            prompts = geo_generate_prompts(brand, sector, pais, n_prompts)
+            with st.expander("Prompts enviados a cada modelo"):
+                for i, p in enumerate(prompts, 1):
+                    st.write(f"{i}. {p}")
 
-            # Paso 3 — Generar PPTX
-            with st.spinner("Generando presentación..."):
-                try:
-                    if logo_file:
-                        logo_bytes = logo_file.getvalue()
-                    else:
-                        logo_bytes = None
-                    pptx_bytes = generate_pptx(empresa.strip(), fecha, logo_bytes, result)
-                    filename   = f"Auditoria_GEO_{empresa.strip().replace(' ', '_')}_{fecha.strftime('%Y%m')}.pptx"
-                except Exception as exc:
-                    st.error(f"Error al generar el PPTX: {exc}")
-                    import traceback
-                    with st.expander("Detalle"):
-                        st.code(traceback.format_exc())
-                    st.stop()
+            # Paso 3 — Consultar modelos
+            active_models = {"Claude": geo_query_claude, "ChatGPT": geo_query_openai}
+            if GEMINI_KEY:
+                active_models["Gemini"] = geo_query_gemini
+            if GROQ_KEY:
+                active_models["Groq"]   = geo_query_groq
 
-            st.download_button(
-                label="Descargar PPTX",
-                data=pptx_bytes,
-                file_name=filename,
-                mime="application/vnd.openxmlformats-officedocument.presentationml.presentation",
-                use_container_width=True,
-                type="primary",
-            )
+            all_responses = {m: [] for m in active_models}
+            scores        = {}
+            total_calls   = len(active_models) * len(prompts)
+            done          = 0
+            progress_bar  = st.progress(0, text="Consultando modelos...")
+
+            for model_name, query_fn in active_models.items():
+                for prompt in prompts:
+                    resp = _query_safe(query_fn, prompt)
+                    all_responses[model_name].append(resp)
+                    done += 1
+                    progress_bar.progress(done / total_calls, text=f"Consultando {model_name}... ({done}/{total_calls})")
+                scores[model_name] = geo_score(brand, all_responses[model_name])
+
+            progress_bar.empty()
+
+            # Paso 4 — Mostrar resultados
+            score_global = round(sum(scores.values()) / len(scores))
+            st.subheader("Resultados de visibilidad")
+
+            score_cols = st.columns(len(scores) + 1)
+            for i, (model, s) in enumerate(scores.items()):
+                score_cols[i].metric(model, f"{s}/100")
+            score_cols[-1].metric("Score Global", f"{score_global}/100")
+
+            with st.expander("Detalle de menciones por prompt"):
+                for model_name, resps in all_responses.items():
+                    st.markdown(f"**{model_name}**")
+                    for i, (p, r) in enumerate(zip(prompts, resps), 1):
+                        icon = "✅" if geo_mentions(brand, r) else "❌"
+                        st.write(f"{icon} P{i}: {p}")
+
+            # Paso 5 — Generar PPTX
+            st.divider()
+            st.subheader("Generar auditoría PPTX")
+            col_e, col_f = st.columns(2)
+            empresa_geo = col_e.text_input("Nombre empresa", value=brand, key="empresa_geo")
+            fecha_geo   = col_f.date_input("Fecha", value=date.today(), key="fecha_geo")
+
+            if st.button("Generar PPTX con estos resultados", key="btn_pptx_geo"):
+                with st.spinner("Claude generando análisis cualitativo..."):
+                    try:
+                        result = geo_analyze_results(brand, sector, pais, scores, all_responses, observaciones_t2)
+                        result["score_global"]     = score_global
+                        result["chatgpt_score"]    = scores.get("ChatGPT", 0)
+                        result["gemini_score"]     = scores.get("Gemini", 0)
+                        result["claude_score"]     = scores.get("Claude", 0)
+                        result["perplexity_score"] = scores.get("Groq", 0)
+                    except Exception as e:
+                        st.error(f"Error en análisis: {e}")
+                        import traceback
+                        with st.expander("Detalle"):
+                            st.code(traceback.format_exc())
+                        st.stop()
+
+                with st.spinner("Generando PPTX..."):
+                    try:
+                        logo_bytes = logo_geo.getvalue() if logo_geo else None
+                        pptx_bytes = generate_pptx(empresa_geo.strip(), fecha_geo, logo_bytes, result)
+                        filename   = f"Auditoria_GEO_{empresa_geo.strip().replace(' ', '_')}_{fecha_geo.strftime('%Y%m')}.pptx"
+                    except Exception as e:
+                        st.error(f"Error generando PPTX: {e}")
+                        import traceback
+                        with st.expander("Detalle"):
+                            st.code(traceback.format_exc())
+                        st.stop()
+
+                st.download_button(
+                    label="Descargar PPTX",
+                    data=pptx_bytes,
+                    file_name=filename,
+                    mime="application/vnd.openxmlformats-officedocument.presentationml.presentation",
+                    use_container_width=True,
+                    type="primary",
+                )
