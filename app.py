@@ -1005,23 +1005,58 @@ Scores obtenidos:
 - Gemini: {scores.get('Gemini', 0)}/100
 - Groq/Llama: {scores.get('Groq', 0)}/100
 
-Respuestas completas de los modelos (cuando se les preguntó qué empresas de {sector} recomiendan en {pais}):
+Respuestas de los modelos cuando se les preguntó qué empresas de {sector} recomiendan en {pais}:
 {resps_text[:4000]}
 
-INSTRUCCIONES PARA COMPETITORS:
-Lee las respuestas anteriores e identifica qué empresas/marcas mencionan los modelos de IA como referentes en {sector} en {pais}. Esas son los competidores reales de "{brand}" en el entorno de IA. Para cada competidor extrae: nombre exacto como aparece en las respuestas, descripción breve de qué hace (basada en cómo lo describen los modelos), y estrellas (4-5 si lo mencionan mucho/primero, 2-3 si poco). Toma los 3 más mencionados. NO incluyas a "{brand}" en la lista de competidores.
+INSTRUCCIONES:
 
-INSTRUCCIONES PARA OPPORTUNITIES:
-Basándote en que "{brand}" obtiene {scores.get('ChatGPT', 0)}/100 en ChatGPT y {scores.get('Gemini', 0)}/100 en Gemini, y en lo que SÍ dicen los modelos de los competidores, genera 4 oportunidades concretas y accionables para mejorar la visibilidad GEO de "{brand}".
+TOP COMPETITORS: Lee las respuestas e identifica qué empresas mencionan los modelos. Esas son los competidores de "{brand}" en IA. Toma los 3 más mencionados, excluye a "{brand}". Para cada uno: nombre exacto, qué hace según los modelos, estrellas (4-5 si muy mencionado, 2-3 si poco).
+
+BRAND REPUTATION: Analiza si "{brand}" aparece en las respuestas y cómo lo describen los modelos. Si no aparece, indica que su reputación en IA es inexistente o muy baja. Incluye el tono general (positivo/neutro/ausente) y qué atributos asocian a la marca.
+
+KEY STRENGTHS: Fortalezas reales de "{brand}" que debería capitalizar para mejorar su GEO (basadas en su sector y lo que valoran los modelos de empresas similares).
+
+IMPROVEMENT OPPORTUNITIES: Oportunidades concretas basadas en lo que SÍ dicen los modelos de los competidores pero NO de "{brand}".
+
+SAMPLE SEARCH PROMPTS: Ejemplos de búsquedas que los usuarios reales hacen en IA y donde "{brand}" debería aparecer pero no aparece. Hazlos realistas, como preguntaría un cliente potencial.
+
+AI SEARCH INSIGHTS: Para cada modelo (ChatGPT, Gemini, Claude, Groq/Llama) un insight específico sobre cómo trata a "{brand}" y qué debería hacer para mejorar en ese modelo concreto.
 
 Devuelve SOLO este JSON:
 {{
-  "resumen": "<2-3 frases sobre el estado de visibilidad en IA>",
-  "competitive_desc": "<frase corta sobre posicion competitiva vs competidores identificados>",
+  "resumen": "<2-3 frases sobre visibilidad global>",
+  "competitive_desc": "<frase corta sobre posicion vs competidores>",
+  "brand_reputation": {{
+    "tone": "<Ausente|Negativa|Neutra|Positiva>",
+    "summary": "<2-3 frases sobre cómo describen los modelos a la marca, o por qué no la mencionan>",
+    "attributes": ["<atributo 1>", "<atributo 2>", "<atributo 3>"]
+  }},
   "competitors": [
-    {{"name": "<nombre extraido de las respuestas>", "stars": <1-5>, "desc": "<que hace segun los modelos, max 100 chars>"}},
-    {{"name": "<nombre extraido de las respuestas>", "stars": <1-5>, "desc": "<que hace segun los modelos, max 100 chars>"}},
-    {{"name": "<nombre extraido de las respuestas>", "stars": <1-5>, "desc": "<que hace segun los modelos, max 100 chars>"}}
+    {{"name": "<nombre>", "stars": <1-5>, "desc": "<que hace segun modelos, max 100 chars>"}},
+    {{"name": "<nombre>", "stars": <1-5>, "desc": "<que hace segun modelos, max 100 chars>"}},
+    {{"name": "<nombre>", "stars": <1-5>, "desc": "<que hace segun modelos, max 100 chars>"}}
+  ],
+  "strengths": ["<fortaleza 1>", "<fortaleza 2>", "<fortaleza 3>", "<fortaleza 4>"],
+  "opportunities": ["<oportunidad 1>", "<oportunidad 2>", "<oportunidad 3>", "<oportunidad 4>"],
+  "sample_prompts": [
+    "<pregunta realista que haría un cliente potencial en ChatGPT/Gemini>",
+    "<pregunta realista 2>",
+    "<pregunta realista 3>",
+    "<pregunta realista 4>",
+    "<pregunta realista 5>"
+  ],
+  "ai_search_insights": [
+    {{"model": "ChatGPT", "visibility": "<Nula|Baja|Media|Alta>", "insight": "<qué dice o no dice ChatGPT sobre la marca y por qué>"}},
+    {{"model": "Gemini",  "visibility": "<Nula|Baja|Media|Alta>", "insight": "<insight específico de Gemini>"}},
+    {{"model": "Claude",  "visibility": "<Nula|Baja|Media|Alta>", "insight": "<insight específico de Claude>"}},
+    {{"model": "Groq/Llama", "visibility": "<Nula|Baja|Media|Alta>", "insight": "<insight específico de Llama>"}}
+  ],
+  "recommendations": [
+    {{"title": "<accion 1, max 50 chars>", "desc": "<1 frase, max 90 chars>", "priority": 3}},
+    {{"title": "<accion 2, max 50 chars>", "desc": "<1 frase, max 90 chars>", "priority": 3}},
+    {{"title": "<accion 3, max 50 chars>", "desc": "<1 frase, max 90 chars>", "priority": 3}},
+    {{"title": "<accion 4, max 50 chars>", "desc": "<1 frase, max 90 chars>", "priority": 2}},
+    {{"title": "<accion 5, max 50 chars>", "desc": "<1 frase, max 90 chars>", "priority": 2}}
   ],
   "chatgpt_hallazgos": [
     {{"title": "<hallazgo 1, max 40 chars>", "detail": "<2 lineas con \\n, max 160 chars>"}},
@@ -1045,20 +1080,6 @@ Devuelve SOLO este JSON:
     {{"label": "<diagnostico 3>", "value": "<valor>"}}
   ],
   "gemini_prioridad": "<ACCION PRIORITARIA EN MAYUSCULAS, max 55 chars>",
-  "strengths": ["<fortaleza 1>", "<fortaleza 2>", "<fortaleza 3>", "<fortaleza 4>"],
-  "opportunities": [
-    "<oportunidad concreta 1 basada en lo que hacen los competidores que los modelos si mencionan>",
-    "<oportunidad concreta 2>",
-    "<oportunidad concreta 3>",
-    "<oportunidad concreta 4>"
-  ],
-  "recommendations": [
-    {{"title": "<accion 1, max 50 chars>", "desc": "<1 frase, max 90 chars>", "priority": 3}},
-    {{"title": "<accion 2, max 50 chars>", "desc": "<1 frase, max 90 chars>", "priority": 3}},
-    {{"title": "<accion 3, max 50 chars>", "desc": "<1 frase, max 90 chars>", "priority": 3}},
-    {{"title": "<accion 4, max 50 chars>", "desc": "<1 frase, max 90 chars>", "priority": 2}},
-    {{"title": "<accion 5, max 50 chars>", "desc": "<1 frase, max 90 chars>", "priority": 2}}
-  ],
   "steps": [
     {{"title": "Revisar hallazgos", "desc": "<1 frase, max 90 chars>"}},
     {{"title": "Priorizar iniciativas", "desc": "<1 frase, max 90 chars>"}},
@@ -1336,24 +1357,78 @@ with tab2:
                     analysis_preview = None
 
             if analysis_preview:
-                comps = analysis_preview.get("competitors", [])
-                opps  = analysis_preview.get("opportunities", [])
+                comps       = analysis_preview.get("competitors", [])
+                opps        = analysis_preview.get("opportunities", [])
+                strengths   = analysis_preview.get("strengths", [])
+                reputation  = analysis_preview.get("brand_reputation", {})
+                insights    = analysis_preview.get("ai_search_insights", [])
+                s_prompts   = analysis_preview.get("sample_prompts", [])
+                recs        = analysis_preview.get("recommendations", [])
 
-                col_c, col_o = st.columns(2)
-                with col_c:
-                    st.subheader("Competidores detectados")
-                    if comps:
-                        for c in comps:
+                # 1. Top Competitors
+                st.subheader("Top Competitors")
+                if comps:
+                    cols_c = st.columns(len(comps))
+                    for i, c in enumerate(comps):
+                        with cols_c[i]:
                             stars = "⭐" * max(1, min(5, c.get("stars", 3)))
-                            st.markdown(f"**{c.get('name', '')}** {stars}")
+                            st.markdown(f"**{c.get('name', '')}**")
+                            st.write(stars)
                             st.caption(c.get("desc", ""))
-                    else:
-                        st.info("No se detectaron competidores en las respuestas.")
+                else:
+                    st.info("No se detectaron competidores en las respuestas.")
 
-                with col_o:
-                    st.subheader("Oportunidades de mejora")
-                    for i, opp in enumerate(opps, 1):
-                        st.markdown(f"{i}. {opp}")
+                st.divider()
+
+                # 2. Brand Reputation
+                st.subheader("Brand Reputation")
+                tone = reputation.get("tone", "")
+                tone_color = {"Ausente": "🔴", "Negativa": "🔴", "Neutra": "🟡", "Positiva": "🟢"}.get(tone, "⚪")
+                st.markdown(f"{tone_color} **{tone}** — {reputation.get('summary', '')}")
+                attrs = reputation.get("attributes", [])
+                if attrs:
+                    st.write(" · ".join(f"`{a}`" for a in attrs))
+
+                st.divider()
+
+                # 3. Key Strengths
+                st.subheader("Key Strengths")
+                cols_s = st.columns(2)
+                for i, s in enumerate(strengths):
+                    cols_s[i % 2].markdown(f"✅ {s}")
+
+                st.divider()
+
+                # 4. Improvement Opportunities
+                st.subheader("Improvement Opportunities")
+                cols_o = st.columns(2)
+                for i, opp in enumerate(opps):
+                    cols_o[i % 2].markdown(f"🔧 {opp}")
+
+                st.divider()
+
+                # 5. Sample Search Prompts
+                st.subheader("Sample Search Prompts")
+                st.caption("Búsquedas donde debería aparecer la marca pero no aparece:")
+                for p in s_prompts:
+                    st.markdown(f"💬 _{p}_")
+
+                st.divider()
+
+                # 6. AI Search Insights
+                st.subheader("AI Search Insights")
+                vis_color = {"Nula": "🔴", "Baja": "🟠", "Media": "🟡", "Alta": "🟢"}
+                for ins in insights:
+                    icon = vis_color.get(ins.get("visibility", ""), "⚪")
+                    st.markdown(f"{icon} **{ins.get('model', '')}** ({ins.get('visibility', '')}) — {ins.get('insight', '')}")
+
+                st.divider()
+
+                # 7. Recommendations
+                st.subheader("Recommendations")
+                pri_label = {3: "🔴 Alta", 2: "🟡 Media", 1: "🟢 Baja"}
+                for r in recs:
+                    st.markdown(f"{pri_label.get(r.get('priority', 2), '')} **{r.get('title', '')}** — {r.get('desc', '')}")
 
             # Paso 5 — Generar PPTX
             st.divider()
