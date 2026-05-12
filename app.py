@@ -27,22 +27,36 @@ BASE_DIR      = os.path.dirname(os.path.abspath(__file__))
 TEMPLATE_PATH = os.path.join(BASE_DIR, "template.pptx")
 
 # API key: Streamlit Secrets (cloud) o variable de entorno (local)
-try:
-    from dotenv import load_dotenv
-    load_dotenv()
-except ImportError:
-    pass
+def _load_env_file():
+    """Lee el .env del directorio del script y setea os.environ."""
+    env_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
+    if not os.path.exists(env_path):
+        return
+    with open(env_path, "r", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, _, val = line.partition("=")
+            os.environ[key.strip()] = val.strip()
 
-try:
-    ANTHROPIC_KEY = st.secrets["ANTHROPIC_API_KEY"]
-    OPENAI_KEY    = st.secrets.get("OPENAI_API_KEY",  os.environ.get("OPENAI_API_KEY", ""))
-    GEMINI_KEY    = st.secrets.get("GEMINI_API_KEY",  os.environ.get("GEMINI_API_KEY", ""))
-    GROQ_KEY      = st.secrets.get("GROQ_API_KEY",    os.environ.get("GROQ_API_KEY", ""))
-except Exception:
-    ANTHROPIC_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
-    OPENAI_KEY    = os.environ.get("OPENAI_API_KEY", "")
-    GEMINI_KEY    = os.environ.get("GEMINI_API_KEY", "")
-    GROQ_KEY      = os.environ.get("GROQ_API_KEY", "")
+_load_env_file()
+
+
+def _get_key(name: str) -> str:
+    val = os.environ.get(name, "")
+    if not val:
+        try:
+            val = st.secrets.get(name, "")
+        except Exception:
+            pass
+    return val
+
+
+ANTHROPIC_KEY = _get_key("ANTHROPIC_API_KEY")
+OPENAI_KEY    = _get_key("OPENAI_API_KEY")
+GEMINI_KEY    = _get_key("GEMINI_API_KEY")
+GROQ_KEY      = _get_key("GROQ_API_KEY")
 EMU_PER_SCORE_PT = 54864
 
 MONTHS_ES = {
