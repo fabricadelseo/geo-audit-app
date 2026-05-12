@@ -1007,10 +1007,10 @@ def geo_analyze_results(brand: str, sector: str, pais: str, scores: dict, all_re
         resps_text += f"\n\n=== {model} ===\n"
         if isinstance(sections, dict):
             for section, resp in sections.items():
-                resps_text += f"[{section.upper()}] {resp[:400]}\n"
+                resps_text += f"[{section.upper()}] {resp[:250]}\n"
         else:
             for i, r in enumerate(sections, 1):
-                resps_text += f"[P{i}] {r[:300]}\n"
+                resps_text += f"[P{i}] {r[:200]}\n"
 
     obs_block = f"\nOBSERVACIONES DEL CLIENTE (tenlas muy en cuenta): {observaciones.strip()}\n" if observaciones.strip() else ""
     ahrefs_block = ""
@@ -1122,7 +1122,7 @@ Devuelve SOLO este JSON:
 
     r = client.messages.create(
         model="claude-sonnet-4-6",
-        max_tokens=3000,
+        max_tokens=6000,
         messages=[{"role": "user", "content": content}]
     )
     raw = r.content[0].text.strip()
@@ -1130,7 +1130,29 @@ Devuelve SOLO este JSON:
         raw = raw.split("```json")[1].split("```")[0].strip()
     elif "```" in raw:
         raw = raw.split("```")[1].split("```")[0].strip()
-    return json.loads(raw)
+
+    # Si el JSON viene truncado, intentar cerrarlo
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError:
+        # Truncar al último campo completo y cerrar el JSON
+        last_brace = raw.rfind('},')
+        if last_brace == -1:
+            last_brace = raw.rfind('}')
+        if last_brace != -1:
+            raw = raw[:last_brace + 1] + "\n]}\n" if '"recommendations"' in raw[last_brace:] else raw[:last_brace + 1] + "\n}"
+        try:
+            return json.loads(raw)
+        except json.JSONDecodeError:
+            # Devolver estructura mínima para no romper la app
+            return {
+                "resumen": "Análisis generado parcialmente por límite de tokens.",
+                "competitive_desc": "", "brand_reputation": {"tone": "Neutra", "summary": "", "attributes": []},
+                "competitors": [], "strengths": [], "opportunities": [], "sample_prompts": [],
+                "ai_search_insights": [], "recommendations": [], "steps": [],
+                "chatgpt_hallazgos": [], "chatgpt_diagnosticos": [], "chatgpt_prioridad": "",
+                "gemini_hallazgos": [], "gemini_diagnosticos": [], "gemini_prioridad": "",
+            }
 
 
 # ─────────────────────────────────────────────────────────────
