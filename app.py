@@ -1001,7 +1001,7 @@ def geo_score_from_sections(brand: str, sections: dict) -> int:
     return round(hits / len(sections) * 100)
 
 
-def geo_analyze_results(brand: str, sector: str, pais: str, scores: dict, all_responses: dict, observaciones: str = "") -> dict:
+def geo_analyze_results(brand: str, sector: str, pais: str, scores: dict, all_responses: dict, observaciones: str = "", ahrefs_img: bytes = None) -> dict:
     resps_text = ""
     for model, sections in all_responses.items():
         resps_text += f"\n\n=== {model} ===\n"
@@ -1013,9 +1013,13 @@ def geo_analyze_results(brand: str, sector: str, pais: str, scores: dict, all_re
                 resps_text += f"[P{i}] {r[:300]}\n"
 
     obs_block = f"\nOBSERVACIONES DEL CLIENTE (tenlas muy en cuenta): {observaciones.strip()}\n" if observaciones.strip() else ""
+    ahrefs_block = ""
+    if ahrefs_img:
+        ahrefs_block = "\nADEMÁS se adjunta una captura de pantalla de Ahrefs AI Citations para este dominio. Extrae de ella: qué plataformas de IA citan el dominio, cuántas veces, qué páginas son las más citadas, y cualquier otro dato relevante visible. Integra esta información en el análisis, especialmente en brand_reputation, ai_search_insights y recommendations.\n"
+
     client = Anthropic(api_key=ANTHROPIC_KEY)
     prompt = f"""Eres un experto en GEO (Generative Engine Optimization).
-{obs_block}
+{obs_block}{ahrefs_block}
 Analiza los resultados de visibilidad de "{brand}" ({sector}, {pais}) en modelos de IA.
 
 Scores obtenidos:
@@ -1107,10 +1111,19 @@ Devuelve SOLO este JSON:
   ]
 }}"""
 
+    content = []
+    if ahrefs_img:
+        media_type = "image/png" if ahrefs_img[:4] == b"\x89PNG" else "image/jpeg"
+        content.append({
+            "type": "image",
+            "source": {"type": "base64", "media_type": media_type, "data": base64.standard_b64encode(ahrefs_img).decode()}
+        })
+    content.append({"type": "text", "text": prompt})
+
     r = client.messages.create(
         model="claude-sonnet-4-6",
         max_tokens=3000,
-        messages=[{"role": "user", "content": prompt}]
+        messages=[{"role": "user", "content": content}]
     )
     raw = r.content[0].text.strip()
     if "```json" in raw:
@@ -1281,7 +1294,18 @@ with tab2:
     domain_input = st.text_input("Dominio de la empresa", placeholder="Ej: lafabricadelseo.com", key="domain_input")
     st.caption("Se enviarán 5 preguntas específicas a cada modelo: competidores, reputación, fortalezas, oportunidades y prompts de búsqueda.")
 
-    logo_geo = st.file_uploader("Logo empresa (opcional, para el PPTX)", type=["jpg", "jpeg", "png"], key="logo_geo")
+    col_logo, col_ahrefs = st.columns(2)
+    with col_logo:
+        logo_geo = st.file_uploader("Logo empresa (opcional, para el PPTX)", type=["jpg", "jpeg", "png"], key="logo_geo")
+    with col_ahrefs:
+        ahrefs_file = st.file_uploader(
+            "Screenshot Ahrefs AI Citations (opcional)",
+            type=["jpg", "jpeg", "png"],
+            key="ahrefs_file",
+            help="Captura de la sección AI Citations de Ahrefs. Claude la interpretará y enriquecerá el informe con datos reales de citaciones."
+        )
+        if ahrefs_file:
+            st.image(ahrefs_file, caption="Ahrefs AI Citations", use_container_width=True)
 
     observaciones_t2 = st.text_area(
         "Observaciones del cliente (opcional)",
@@ -1366,7 +1390,8 @@ with tab2:
             st.divider()
             with st.spinner("Claude analizando competidores y oportunidades..."):
                 try:
-                    analysis_preview = geo_analyze_results(brand, sector, pais, scores, all_responses, observaciones_t2)
+                    ahrefs_bytes = ahrefs_file.getvalue() if ahrefs_file else None
+                analysis_preview = geo_analyze_results(brand, sector, pais, scores, all_responses, observaciones_t2, ahrefs_bytes)
                     st.session_state["geo_analysis"] = analysis_preview
                 except Exception as e:
                     st.warning(f"No se pudo generar el análisis previo: {e}")
@@ -1458,7 +1483,8 @@ with tab2:
                 if not result:
                     with st.spinner("Claude generando análisis cualitativo..."):
                         try:
-                            result = geo_analyze_results(brand, sector, pais, scores, all_responses, observaciones_t2)
+                            ahrefs_bytes = ahrefs_file.getvalue() if ahrefs_file else None
+                            result = geo_analyze_results(brand, sector, pais, scores, all_responses, observaciones_t2, ahrefs_bytes)
                         except Exception as e:
                             st.error(f"Error en análisis: {e}")
                             import traceback
