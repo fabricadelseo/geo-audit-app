@@ -318,6 +318,7 @@ def model_label(score: int, model: str) -> str:
         "Gemini":     {80: "Alto - Reconocimiento sólido",       60: "Medio-Alto - Presencia notable", 40: "Medio - Reconocimiento parcial",   20: "Bajo - Poco reconocimiento",    0: "Muy Bajo - Sin presencia"},
         "Claude":     {80: "Alto - Información completa",        60: "Medio-Alto - Buena información", 40: "Medio - Información parcial",      20: "Bajo - Información limitada",   0: "Muy Bajo - Sin información"},
         "Perplexity": {80: "Alto - Fuentes abundantes",          60: "Medio-Alto - Buenas fuentes",    40: "Medio - Fuentes moderadas",        20: "Bajo - Pocas fuentes disponibles", 0: "Muy Bajo - Sin fuentes"},
+        "Grok / Llama": {80: "Alto - Amplia cobertura",         60: "Medio-Alto - Buena cobertura",   40: "Medio - Cobertura parcial",        20: "Bajo - Cobertura limitada",        0: "Muy Bajo - Sin presencia"},
     }
     for thr, label in sorted(opts.get(model, {}).items(), reverse=True):
         if score >= thr:
