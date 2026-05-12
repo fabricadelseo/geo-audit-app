@@ -1013,13 +1013,14 @@ def generate_pptx(empresa: str, fecha: date, logo_bytes, d: dict, fourth_model: 
 # ESCÁNER GEO — FUNCIONES
 # ─────────────────────────────────────────────────────────────
 
-def geo_detect_brand(domain: str) -> dict:
+def geo_detect_brand(domain: str, observaciones: str = "") -> dict:
+    obs_hint = f"\nContexto adicional: {observaciones.strip()}" if observaciones.strip() else ""
     client = Anthropic(api_key=ANTHROPIC_KEY)
     r = client.messages.create(
         model="claude-haiku-4-5-20251001",
         max_tokens=200,
         messages=[{"role": "user", "content": (
-            f"Dado el dominio: {domain}\n"
+            f"Dado el dominio: {domain}{obs_hint}\n"
             "Devuelve SOLO este JSON (sin texto extra):\n"
             '{"brand": "<nombre comercial>", "sector": "<sector en 3-4 palabras>", "pais": "<país en español>"}\n'
             'Ejemplo: {"brand": "La Fabrica del SEO", "sector": "agencia SEO", "pais": "Espana"}'
@@ -1452,7 +1453,9 @@ with tab1:
 with tab2:
     st.caption("Introduce un dominio → consultamos ChatGPT, Gemini, Claude y Llama → score de visibilidad → PPTX.")
 
-    domain_input = st.text_input("Dominio de la empresa", placeholder="Ej: lafabricadelseo.com", key="domain_input")
+    col_dom, col_pais = st.columns([3, 1])
+    domain_input = col_dom.text_input("Dominio de la empresa", placeholder="Ej: lafabricadelseo.com", key="domain_input")
+    pais_manual  = col_pais.text_input("País", placeholder="Ej: España", key="pais_manual")
     st.caption("Se enviarán 5 preguntas específicas a cada modelo: competidores, reputación, fortalezas, oportunidades y prompts de búsqueda.")
 
     with st.expander("Estado de API keys"):
@@ -1498,10 +1501,10 @@ with tab2:
             # Paso 1 — Detectar marca y sector
             with st.spinner("Detectando marca y sector..."):
                 try:
-                    info   = geo_detect_brand(domain_input.strip())
+                    info   = geo_detect_brand(domain_input.strip(), observaciones_t2)
                     brand  = info.get("brand", domain_input)
                     sector = info.get("sector", "empresa")
-                    pais   = info.get("pais", "España")
+                    pais   = pais_manual.strip() if pais_manual.strip() else info.get("pais", "España")
                 except Exception as e:
                     st.error(f"Error detectando marca: {e}")
                     st.stop()
