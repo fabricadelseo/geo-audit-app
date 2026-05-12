@@ -997,21 +997,32 @@ def geo_analyze_results(brand: str, sector: str, pais: str, scores: dict, all_re
     client = Anthropic(api_key=ANTHROPIC_KEY)
     prompt = f"""Eres un experto en GEO (Generative Engine Optimization).
 {obs_block}
-Analiza los resultados de visibilidad de "{brand}" ({sector}, {pais}) en modelos de IA:
+Analiza los resultados de visibilidad de "{brand}" ({sector}, {pais}) en modelos de IA.
 
-Scores:
+Scores obtenidos:
 - Claude: {scores.get('Claude', 0)}/100
 - ChatGPT: {scores.get('ChatGPT', 0)}/100
 - Gemini: {scores.get('Gemini', 0)}/100
 - Groq/Llama: {scores.get('Groq', 0)}/100
 
-Respuestas de los modelos (extractos):
-{resps_text[:3000]}
+Respuestas completas de los modelos (cuando se les preguntó qué empresas de {sector} recomiendan en {pais}):
+{resps_text[:4000]}
+
+INSTRUCCIONES PARA COMPETITORS:
+Lee las respuestas anteriores e identifica qué empresas/marcas mencionan los modelos de IA como referentes en {sector} en {pais}. Esas son los competidores reales de "{brand}" en el entorno de IA. Para cada competidor extrae: nombre exacto como aparece en las respuestas, descripción breve de qué hace (basada en cómo lo describen los modelos), y estrellas (4-5 si lo mencionan mucho/primero, 2-3 si poco). Toma los 3 más mencionados. NO incluyas a "{brand}" en la lista de competidores.
+
+INSTRUCCIONES PARA OPPORTUNITIES:
+Basándote en que "{brand}" obtiene {scores.get('ChatGPT', 0)}/100 en ChatGPT y {scores.get('Gemini', 0)}/100 en Gemini, y en lo que SÍ dicen los modelos de los competidores, genera 4 oportunidades concretas y accionables para mejorar la visibilidad GEO de "{brand}".
 
 Devuelve SOLO este JSON:
 {{
   "resumen": "<2-3 frases sobre el estado de visibilidad en IA>",
-  "competitive_desc": "<frase corta sobre posicion competitiva>",
+  "competitive_desc": "<frase corta sobre posicion competitiva vs competidores identificados>",
+  "competitors": [
+    {{"name": "<nombre extraido de las respuestas>", "stars": <1-5>, "desc": "<que hace segun los modelos, max 100 chars>"}},
+    {{"name": "<nombre extraido de las respuestas>", "stars": <1-5>, "desc": "<que hace segun los modelos, max 100 chars>"}},
+    {{"name": "<nombre extraido de las respuestas>", "stars": <1-5>, "desc": "<que hace segun los modelos, max 100 chars>"}}
+  ],
   "chatgpt_hallazgos": [
     {{"title": "<hallazgo 1, max 40 chars>", "detail": "<2 lineas con \\n, max 160 chars>"}},
     {{"title": "<hallazgo 2, max 40 chars>", "detail": "<2 lineas con \\n, max 160 chars>"}},
@@ -1035,7 +1046,12 @@ Devuelve SOLO este JSON:
   ],
   "gemini_prioridad": "<ACCION PRIORITARIA EN MAYUSCULAS, max 55 chars>",
   "strengths": ["<fortaleza 1>", "<fortaleza 2>", "<fortaleza 3>", "<fortaleza 4>"],
-  "opportunities": ["<oportunidad 1>", "<oportunidad 2>", "<oportunidad 3>", "<oportunidad 4>"],
+  "opportunities": [
+    "<oportunidad concreta 1 basada en lo que hacen los competidores que los modelos si mencionan>",
+    "<oportunidad concreta 2>",
+    "<oportunidad concreta 3>",
+    "<oportunidad concreta 4>"
+  ],
   "recommendations": [
     {{"title": "<accion 1, max 50 chars>", "desc": "<1 frase, max 90 chars>", "priority": 3}},
     {{"title": "<accion 2, max 50 chars>", "desc": "<1 frase, max 90 chars>", "priority": 3}},
@@ -1048,8 +1064,7 @@ Devuelve SOLO este JSON:
     {{"title": "Priorizar iniciativas", "desc": "<1 frase, max 90 chars>"}},
     {{"title": "Implementar Quick Wins", "desc": "<1 frase, max 90 chars>"}},
     {{"title": "Monitorear progreso", "desc": "<1 frase, max 90 chars>"}}
-  ],
-  "competitors": []
+  ]
 }}"""
 
     r = client.messages.create(
@@ -1310,6 +1325,36 @@ with tab2:
                         icon = "✅" if geo_mentions(brand, r) else "❌"
                         st.write(f"{icon} P{i}: {p}")
 
+            # Paso 4b — Análisis rápido: competidores y oportunidades
+            st.divider()
+            with st.spinner("Claude analizando competidores y oportunidades..."):
+                try:
+                    analysis_preview = geo_analyze_results(brand, sector, pais, scores, all_responses, observaciones_t2)
+                    st.session_state["geo_analysis"] = analysis_preview
+                except Exception as e:
+                    st.warning(f"No se pudo generar el análisis previo: {e}")
+                    analysis_preview = None
+
+            if analysis_preview:
+                comps = analysis_preview.get("competitors", [])
+                opps  = analysis_preview.get("opportunities", [])
+
+                col_c, col_o = st.columns(2)
+                with col_c:
+                    st.subheader("Competidores detectados")
+                    if comps:
+                        for c in comps:
+                            stars = "⭐" * max(1, min(5, c.get("stars", 3)))
+                            st.markdown(f"**{c.get('name', '')}** {stars}")
+                            st.caption(c.get("desc", ""))
+                    else:
+                        st.info("No se detectaron competidores en las respuestas.")
+
+                with col_o:
+                    st.subheader("Oportunidades de mejora")
+                    for i, opp in enumerate(opps, 1):
+                        st.markdown(f"{i}. {opp}")
+
             # Paso 5 — Generar PPTX
             st.divider()
             st.subheader("Generar auditoría PPTX")
@@ -1318,20 +1363,22 @@ with tab2:
             fecha_geo   = col_f.date_input("Fecha", value=date.today(), key="fecha_geo")
 
             if st.button("Generar PPTX con estos resultados", key="btn_pptx_geo"):
-                with st.spinner("Claude generando análisis cualitativo..."):
-                    try:
-                        result = geo_analyze_results(brand, sector, pais, scores, all_responses, observaciones_t2)
-                        result["score_global"]     = score_global
-                        result["chatgpt_score"]    = scores.get("ChatGPT", 0)
-                        result["gemini_score"]     = scores.get("Gemini", 0)
-                        result["claude_score"]     = scores.get("Claude", 0)
-                        result["perplexity_score"] = scores.get("Groq", 0)
-                    except Exception as e:
-                        st.error(f"Error en análisis: {e}")
-                        import traceback
-                        with st.expander("Detalle"):
-                            st.code(traceback.format_exc())
-                        st.stop()
+                result = st.session_state.get("geo_analysis")
+                if not result:
+                    with st.spinner("Claude generando análisis cualitativo..."):
+                        try:
+                            result = geo_analyze_results(brand, sector, pais, scores, all_responses, observaciones_t2)
+                        except Exception as e:
+                            st.error(f"Error en análisis: {e}")
+                            import traceback
+                            with st.expander("Detalle"):
+                                st.code(traceback.format_exc())
+                            st.stop()
+                result["score_global"]     = score_global
+                result["chatgpt_score"]    = scores.get("ChatGPT", 0)
+                result["gemini_score"]     = scores.get("Gemini", 0)
+                result["claude_score"]     = scores.get("Claude", 0)
+                result["perplexity_score"] = scores.get("Groq", 0)
 
                 with st.spinner("Generando PPTX..."):
                     try:
