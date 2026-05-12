@@ -1594,6 +1594,21 @@ with tab2:
 
             progress_bar.empty()
 
+            # Detectar modelos con errores y mostrar avisos
+            _ERROR_HINTS = {
+                "429": "cuota agotada — añade créditos en la plataforma del proveedor",
+                "insufficient_quota": "cuota agotada — añade créditos en la plataforma del proveedor",
+                "401": "API key inválida o revocada — revisa el valor en Secrets",
+                "403": "acceso denegado — verifica permisos de la API key",
+                "404": "modelo no encontrado — contacta soporte",
+            }
+            for model_name, sections in all_responses.items():
+                errs = [r for r in sections.values() if "[ERROR" in r]
+                if errs:
+                    sample = errs[0]
+                    hint = next((msg for key, msg in _ERROR_HINTS.items() if key in sample), "error desconocido")
+                    st.warning(f"**{model_name}** no pudo responder ({hint}). Su score será 0.")
+
             # Paso 4 — Mostrar scores
             score_global = round(sum(scores.values()) / len(scores))
             st.subheader("Visibilidad por modelo")
