@@ -902,17 +902,31 @@ def geo_detect_brand(domain: str) -> dict:
     return json.loads(raw)
 
 
-def geo_generate_prompts(brand: str, sector: str, pais: str, n: int = 5) -> list:
-    base = [
-        f"¿Qué empresas de {sector} recomiendas en {pais}?",
-        f"¿Cuál es la mejor empresa de {sector} en {pais}?",
-        f"Necesito contratar {sector} en {pais}, ¿qué opciones existen?",
-        f"¿Qué empresas son referentes en {sector} en {pais}?",
-        f"Dame un listado de empresas de {sector} reconocidas en {pais}.",
-        f"¿Qué agencias o empresas de {sector} tienen más reputación en {pais}?",
-        f"Recomiéndame una empresa de {sector} en {pais} con buena reputación.",
-    ]
-    return base[:n]
+SECTION_KEYS = ["competitors", "reputation", "strengths", "opportunities", "search_prompts"]
+
+def geo_section_prompts(brand: str, sector: str, pais: str) -> dict:
+    return {
+        "competitors": (
+            f"¿Qué empresas de {sector} en {pais} son las más conocidas y recomendadas? "
+            f"Lista las principales con una breve descripción de cada una."
+        ),
+        "reputation": (
+            f"¿Conoces la empresa '{brand}' del sector {sector} en {pais}? "
+            f"¿Qué sabes de ella, cómo la describirías y qué reputación tiene?"
+        ),
+        "strengths": (
+            f"¿Qué aspectos positivos o fortalezas destacarías de '{brand}' "
+            f"en el sector {sector} en {pais}? Si no la conoces, indícalo."
+        ),
+        "opportunities": (
+            f"¿En qué aspectos podría mejorar '{brand}' comparado con otras empresas "
+            f"de {sector} en {pais}? Si no la conoces, indícalo."
+        ),
+        "search_prompts": (
+            f"¿Qué preguntas o búsquedas haría alguien que necesita contratar "
+            f"servicios de {sector} en {pais}? Dame 5 ejemplos realistas."
+        ),
+    }
 
 
 def _query_safe(fn, prompt: str) -> str:
@@ -979,19 +993,24 @@ def geo_mentions(brand: str, text: str) -> bool:
     return any(c in bl for c in checks)
 
 
-def geo_score(brand: str, responses: list) -> int:
-    if not responses:
+def geo_score_from_sections(brand: str, sections: dict) -> int:
+    """Calcula score basado en cuántas secciones mencionan la marca."""
+    if not sections:
         return 0
-    hits = sum(1 for r in responses if geo_mentions(brand, r))
-    return round(hits / len(responses) * 100)
+    hits = sum(1 for text in sections.values() if geo_mentions(brand, text))
+    return round(hits / len(sections) * 100)
 
 
 def geo_analyze_results(brand: str, sector: str, pais: str, scores: dict, all_responses: dict, observaciones: str = "") -> dict:
     resps_text = ""
-    for model, resps in all_responses.items():
+    for model, sections in all_responses.items():
         resps_text += f"\n\n=== {model} ===\n"
-        for i, r in enumerate(resps, 1):
-            resps_text += f"[P{i}] {r[:300]}\n"
+        if isinstance(sections, dict):
+            for section, resp in sections.items():
+                resps_text += f"[{section.upper()}] {resp[:400]}\n"
+        else:
+            for i, r in enumerate(sections, 1):
+                resps_text += f"[P{i}] {r[:300]}\n"
 
     obs_block = f"\nOBSERVACIONES DEL CLIENTE (tenlas muy en cuenta): {observaciones.strip()}\n" if observaciones.strip() else ""
     client = Anthropic(api_key=ANTHROPIC_KEY)
@@ -1259,11 +1278,8 @@ with tab1:
 with tab2:
     st.caption("Introduce un dominio → consultamos ChatGPT, Gemini, Claude y Llama → score de visibilidad → PPTX.")
 
-    col_d, col_cfg = st.columns([3, 1])
-    with col_d:
-        domain_input = st.text_input("Dominio de la empresa", placeholder="Ej: lafabricadelseo.com", key="domain_input")
-    with col_cfg:
-        n_prompts = st.slider("Prompts por modelo", min_value=3, max_value=7, value=5)
+    domain_input = st.text_input("Dominio de la empresa", placeholder="Ej: lafabricadelseo.com", key="domain_input")
+    st.caption("Se enviarán 5 preguntas específicas a cada modelo: competidores, reputación, fortalezas, oportunidades y prompts de búsqueda.")
 
     logo_geo = st.file_uploader("Logo empresa (opcional, para el PPTX)", type=["jpg", "jpeg", "png"], key="logo_geo")
 
@@ -1301,50 +1317,50 @@ with tab2:
 
             st.info(f"**Marca:** {brand}  ·  **Sector:** {sector}  ·  **País:** {pais}")
 
-            # Paso 2 — Generar prompts
-            prompts = geo_generate_prompts(brand, sector, pais, n_prompts)
-            with st.expander("Prompts enviados a cada modelo"):
-                for i, p in enumerate(prompts, 1):
-                    st.write(f"{i}. {p}")
+            # Paso 2 — Generar preguntas por sección
+            section_prompts = geo_section_prompts(brand, sector, pais)
+            with st.expander("Preguntas enviadas a cada modelo"):
+                for key, p in section_prompts.items():
+                    st.write(f"**{key.upper()}:** {p}")
 
-            # Paso 3 — Consultar modelos
+            # Paso 3 — Consultar modelos (una pregunta por sección)
             active_models = {"Claude": geo_query_claude, "ChatGPT": geo_query_openai}
             if GEMINI_KEY:
                 active_models["Gemini"] = geo_query_gemini
             if GROQ_KEY:
                 active_models["Groq"]   = geo_query_groq
 
-            all_responses = {m: [] for m in active_models}
+            all_responses = {m: {} for m in active_models}
             scores        = {}
-            total_calls   = len(active_models) * len(prompts)
+            total_calls   = len(active_models) * len(section_prompts)
             done          = 0
             progress_bar  = st.progress(0, text="Consultando modelos...")
 
             for model_name, query_fn in active_models.items():
-                for prompt in prompts:
+                for section_key, prompt in section_prompts.items():
                     resp = _query_safe(query_fn, prompt)
-                    all_responses[model_name].append(resp)
+                    all_responses[model_name][section_key] = resp
                     done += 1
-                    progress_bar.progress(done / total_calls, text=f"Consultando {model_name}... ({done}/{total_calls})")
-                scores[model_name] = geo_score(brand, all_responses[model_name])
+                    progress_bar.progress(done / total_calls, text=f"{model_name} → {section_key}... ({done}/{total_calls})")
+                scores[model_name] = geo_score_from_sections(brand, all_responses[model_name])
 
             progress_bar.empty()
 
-            # Paso 4 — Mostrar resultados
+            # Paso 4 — Mostrar scores
             score_global = round(sum(scores.values()) / len(scores))
-            st.subheader("Resultados de visibilidad")
+            st.subheader("Visibilidad por modelo")
 
             score_cols = st.columns(len(scores) + 1)
             for i, (model, s) in enumerate(scores.items()):
                 score_cols[i].metric(model, f"{s}/100")
             score_cols[-1].metric("Score Global", f"{score_global}/100")
 
-            with st.expander("Detalle de menciones por prompt"):
-                for model_name, resps in all_responses.items():
-                    st.markdown(f"**{model_name}**")
-                    for i, (p, r) in enumerate(zip(prompts, resps), 1):
-                        icon = "✅" if geo_mentions(brand, r) else "❌"
-                        st.write(f"{icon} P{i}: {p}")
+            with st.expander("Respuestas completas de los modelos"):
+                for model_name, sections in all_responses.items():
+                    st.markdown(f"### {model_name}")
+                    for section_key, resp in sections.items():
+                        st.markdown(f"**{section_key.upper()}**")
+                        st.write(resp)
 
             # Paso 4b — Análisis rápido: competidores y oportunidades
             st.divider()
