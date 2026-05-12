@@ -577,7 +577,7 @@ def build_analysis_slide(s, score: int, model_name: str, hallazgos: list, diagno
     # 3 hallazgos
     BULL_D  = 175000
     ITEM_T  = 760000
-    ITEM_S  = 1280000
+    ITEM_S  = 1380000
     TXT_L   = RP_L + BULL_D + 160000
     TXT_W   = RP_W - BULL_D - 160000
 
@@ -589,21 +589,21 @@ def build_analysis_slide(s, score: int, model_name: str, hallazgos: list, diagno
         bull.fill.solid(); bull.fill.fore_color.rgb = BLUE; bull.line.fill.background()
 
         # Título del hallazgo (negrita)
-        htb = s.shapes.add_textbox(Emu(TXT_L), Emu(it), Emu(TXT_W), Emu(210000))
-        p = htb.text_frame.paragraphs[0]; p.text = h.get("title", "")[:45]
+        htb = s.shapes.add_textbox(Emu(TXT_L), Emu(it), Emu(TXT_W), Emu(220000))
+        p = htb.text_frame.paragraphs[0]; p.text = h.get("title", "")[:60]
         r = p.runs[0]; r.font.size = Pt(12); r.font.bold = True; r.font.color.rgb = DARK
 
-        # Detalle (multi-línea) — normalizar \n tanto literal como carácter real
+        # Detalle (multi-línea)
         detail_raw   = h.get("detail", "").replace("\\n", "\n")
         detail_lines = [l.strip() for l in detail_raw.split("\n") if l.strip()]
-        det_tb = s.shapes.add_textbox(Emu(TXT_L), Emu(it + 215000), Emu(TXT_W), Emu(ITEM_S - 260000))
+        det_tb = s.shapes.add_textbox(Emu(TXT_L), Emu(it + 225000), Emu(TXT_W), Emu(ITEM_S - 260000))
         det_tf = det_tb.text_frame; det_tf.word_wrap = True
         for li, line in enumerate(detail_lines[:3]):
             if li == 0:
                 p = det_tf.paragraphs[0]
             else:
                 p = det_tf.add_paragraph()
-            p.text = line[:90]
+            p.text = line[:160]
             if p.runs:
                 r = p.runs[0]; r.font.size = Pt(11); r.font.color.rgb = DARK
 
@@ -701,6 +701,83 @@ def build_list_slide(s, title: str, subtitle: str, items: list):
         r = p.runs[0]
         r.font.size = Pt(12)
         r.font.color.rgb = DARK
+
+
+# ─────────────────────────────────────────────────────────────
+# HELPER — slide recomendaciones (slide 9)
+# ─────────────────────────────────────────────────────────────
+
+def build_recommendations_slide(s, recommendations: list):
+    from pptx.dml.color import RGBColor
+    from pptx.util import Pt
+    from pptx.enum.text import PP_ALIGN, MSO_ANCHOR
+
+    NAVY   = RGBColor(0x0F, 0x1B, 0x3D)
+    ORANGE = RGBColor(0xFF, 0x66, 0x00)
+    LGRAY  = RGBColor(0xF5, 0xF5, 0xF5)
+    DGRAY  = RGBColor(0x88, 0x88, 0x88)
+    DARK   = RGBColor(0x22, 0x22, 0x22)
+    WHITE  = RGBColor(0xFF, 0xFF, 0xFF)
+    SW, SH = 9144000, 5143500
+
+    # Limpiar template
+    sp_tree = s.shapes._spTree
+    for child in list(sp_tree)[2:]:
+        sp_tree.remove(child)
+
+    # Fondo blanco
+    bg = s.shapes.add_shape(1, Emu(0), Emu(0), Emu(SW), Emu(SH))
+    bg.fill.solid(); bg.fill.fore_color.rgb = WHITE; bg.line.fill.background()
+
+    # Título
+    ML = 400000
+    tb = s.shapes.add_textbox(Emu(ML), Emu(120000), Emu(SW - 2*ML), Emu(500000))
+    tb.text_frame.word_wrap = False
+    p = tb.text_frame.paragraphs[0]; p.text = "Top 5 recomendaciones"
+    r = p.runs[0]; r.font.size = Pt(36); r.font.bold = True; r.font.color.rgb = NAVY
+
+    # Filas
+    NUM_W  = 300000
+    ROW_H  = 820000
+    ROW_T  = 700000
+    ROW_GAP = 20000
+    STAR_W = 500000
+
+    for i, rec in enumerate(recommendations[:5]):
+        top    = ROW_T + i * (ROW_H + ROW_GAP)
+        title  = rec.get("title", "")[:70]
+        desc   = rec.get("desc", "")[:160]
+        stars  = "⭐" * max(1, min(5, rec.get("priority", 3)))
+
+        # Fondo fila alternado
+        row_bg = s.shapes.add_shape(1, Emu(ML), Emu(top), Emu(SW - 2*ML), Emu(ROW_H))
+        row_bg.fill.solid(); row_bg.fill.fore_color.rgb = LGRAY; row_bg.line.fill.background()
+
+        # Número
+        ntb = s.shapes.add_textbox(Emu(ML + 60000), Emu(top), Emu(NUM_W), Emu(ROW_H))
+        ntb.text_frame.vertical_anchor = MSO_ANCHOR.MIDDLE
+        p = ntb.text_frame.paragraphs[0]; p.text = str(i + 1)
+        r = p.runs[0]; r.font.size = Pt(22); r.font.bold = True; r.font.color.rgb = ORANGE
+
+        # Título + descripción
+        TEXT_L = ML + NUM_W + 120000
+        TEXT_W = SW - TEXT_L - ML - STAR_W - 80000
+
+        ttb = s.shapes.add_textbox(Emu(TEXT_L), Emu(top + 120000), Emu(TEXT_W), Emu(260000))
+        ttb.text_frame.word_wrap = True
+        p = ttb.text_frame.paragraphs[0]; p.text = title
+        r = p.runs[0]; r.font.size = Pt(13); r.font.bold = True; r.font.color.rgb = DARK
+
+        dtb = s.shapes.add_textbox(Emu(TEXT_L), Emu(top + 380000), Emu(TEXT_W), Emu(360000))
+        dtb.text_frame.word_wrap = True
+        p = dtb.text_frame.paragraphs[0]; p.text = desc
+        r = p.runs[0]; r.font.size = Pt(11); r.font.color.rgb = DGRAY
+
+        # Estrellas
+        stb = s.shapes.add_textbox(Emu(SW - ML - STAR_W), Emu(top), Emu(STAR_W), Emu(ROW_H))
+        stb.text_frame.vertical_anchor = MSO_ANCHOR.MIDDLE
+        p = stb.text_frame.paragraphs[0]; p.alignment = PP_ALIGN.RIGHT; p.text = stars
+        r = p.runs[0]; r.font.size = Pt(16)
 
 
 # ─────────────────────────────────────────────────────────────
@@ -854,21 +931,8 @@ def generate_pptx(empresa: str, fecha: date, logo_bytes, d: dict) -> bytes:
         items    = d.get("opportunities", []),
     )
 
-    # Slide 9 — Recomendaciones
-    s = prs.slides[8]
-    rec_map = [
-        ("Text 3",  "Text 4",  "Text 5"),
-        ("Text 8",  "Text 9",  "Text 10"),
-        ("Text 13", "Text 14", "Text 15"),
-        ("Text 18", "Text 19", "Text 20"),
-        ("Text 23", "Text 24", "Text 25"),
-    ]
-    for i, (tn, dn, sn) in enumerate(rec_map):
-        if i < len(d["recommendations"]):
-            r = d["recommendations"][i]
-            if r.get("title"): set_run(s, tn, r["title"][:55])
-            if r.get("desc"):  set_run(s, dn, r["desc"][:95])
-            set_run(s, sn, "⭐" * max(1, r.get("priority", 3)))
+    # Slide 9 — Recomendaciones (diseño dinámico)
+    build_recommendations_slide(prs.slides[8], d.get("recommendations", []))
 
     # Slide 10 — Próximos pasos
     s = prs.slides[9]
