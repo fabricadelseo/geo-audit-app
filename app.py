@@ -1152,6 +1152,47 @@ _STRONG_DENIAL = [
     "sin información verificada sobre esta marca",
     "no he encontrado información sobre esta empresa",
     "no tengo información verificada sobre",
+    # Señales de hallucination/hedging: el modelo no conoce la marca pero responde igualmente
+    "no tengo información específica",
+    "no tengo información confiable",
+    "no tengo información fiable",
+    "no cuento con información específica",
+    "no tengo datos específicos",
+    "no tengo acceso a información sobre esta empresa",
+    "no la encuentro en",
+    "no encuentro referencias",
+    "no aparece en mis",
+    "no está en mis registros",
+    "no me consta",
+    "no tengo referencias sobre",
+    "basándome en tu descripción",
+    "basándome en lo que describes",
+    "basado en lo que describes",
+    "basado en tu descripción",
+    "basado en el nombre",
+    "a partir del nombre",
+    "dado el nombre",
+    "si se trata de una empresa",
+    "sin conocer directamente",
+    "sin conocerla directamente",
+    "sin tener información directa",
+    "no la conozco directamente",
+    "podría tratarse de",
+    "parece ser una empresa",
+    "si es una empresa real",
+    "según lo que me describes",
+    "según la información que me proporcionas",
+    "la información que me proporcionas",
+    "no tengo información concreta",
+    "no cuento con datos sobre esta",
+    "no cuento con información sobre esta marca",
+    "no dispongo de datos sobre",
+    "no hay información disponible sobre esta empresa",
+    "no he podido encontrar información",
+    "no tengo conocimiento directo",
+    "desconozco los detalles",
+    "no reconozco esta empresa",
+    "no reconozco esta marca",
 ]
 
 
@@ -1207,6 +1248,44 @@ def geo_score_from_sections(brand: str, sections: dict) -> int:
         score += 15
 
     return min(score, 100)
+
+
+def citation_score(n: int) -> int:
+    """Convierte nº de citaciones Ahrefs a score 0-100. Escala: 20 citas = 100."""
+    return min(100, round(n * 5))
+
+
+def geo_extract_citations_from_ahrefs(image_bytes: bytes) -> dict:
+    """
+    Extrae el número de citaciones por modelo IA desde una captura de Ahrefs AI Citations.
+    Devuelve dict con claves: ChatGPT, Gemini, Perplexity, Grok, Claude, Copilot (enteros).
+    """
+    client = Anthropic(api_key=ANTHROPIC_KEY)
+    media_type = "image/png" if image_bytes[:4] == b"\x89PNG" else "image/jpeg"
+    b64 = base64.standard_b64encode(image_bytes).decode("utf-8")
+    response = client.messages.create(
+        model="claude-haiku-4-5-20251001",
+        max_tokens=300,
+        messages=[{
+            "role": "user",
+            "content": [
+                {"type": "image", "source": {"type": "base64", "media_type": media_type, "data": b64}},
+                {"type": "text", "text": (
+                    "This is an Ahrefs AI Citations screenshot. "
+                    "Extract the number of citations for each AI model/platform visible. "
+                    "Return ONLY valid JSON, no extra text:\n"
+                    '{"ChatGPT": <int>, "Gemini": <int>, "Perplexity": <int>, "Grok": <int>, "Claude": <int>, "Copilot": <int>}\n'
+                    "If a model is not visible, use 0. Use only the citations count, not pages."
+                )},
+            ],
+        }],
+    )
+    raw = response.content[0].text.strip()
+    if "```" in raw:
+        raw = raw.split("```")[1].split("```")[0].strip()
+        if raw.startswith("json"):
+            raw = raw[4:].strip()
+    return json.loads(raw)
 
 
 def geo_analyze_results(brand: str, sector: str, pais: str, scores: dict, all_responses: dict, observaciones: str = "", ahrefs_img: bytes = None) -> dict:
@@ -1621,6 +1700,27 @@ with tab2:
                 scores[model_name] = geo_score_from_sections(brand, all_responses[model_name])
 
             progress_bar.empty()
+
+            # Paso 3b — Sobreescribir scores con citaciones reales de Ahrefs si disponible
+            if ahrefs_file:
+                with st.spinner("Extrayendo citaciones reales de Ahrefs AI Citations..."):
+                    try:
+                        ahrefs_file.seek(0)
+                        citations = geo_extract_citations_from_ahrefs(ahrefs_file.read())
+                        ahrefs_file.seek(0)
+                        # Mapeo Ahrefs → modelos activos en la app
+                        _ahrefs_map = {
+                            "ChatGPT": citations.get("ChatGPT", 0),
+                            "Gemini":  citations.get("Gemini", 0),
+                            "Claude":  citations.get("Claude", 0),
+                            "Grok":    max(citations.get("Perplexity", 0), citations.get("Grok", 0)),
+                        }
+                        for model_name in list(scores.keys()):
+                            if model_name in _ahrefs_map:
+                                scores[model_name] = citation_score(_ahrefs_map[model_name])
+                        st.success("✅ Scores actualizados con datos reales de Ahrefs AI Citations.")
+                    except Exception as _e:
+                        st.warning(f"No se pudieron extraer citaciones de Ahrefs ({_e}). Se usarán los scores del escáner.")
 
             # Detectar modelos con errores y mostrar avisos
             _ERROR_HINTS = {
