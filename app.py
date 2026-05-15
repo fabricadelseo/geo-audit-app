@@ -1231,7 +1231,13 @@ INSTRUCCIONES:
 
 TOP COMPETITORS: Lee las respuestas e identifica qué empresas mencionan los modelos. Esas son los competidores de "{brand}" en IA. Toma los 3 más mencionados, excluye a "{brand}". Para cada uno: nombre exacto, qué hace según los modelos, estrellas (4-5 si muy mencionado, 2-3 si poco).
 
-BRAND REPUTATION: Analiza si "{brand}" aparece en las respuestas y cómo lo describen los modelos. Incluye el tono general (positivo/neutro/ausente) y qué atributos asocian a la marca. REGLA CRÍTICA: el texto y el tono DEBEN ser coherentes con los scores numéricos recibidos. Escala obligatoria: ≥80 = Alta (Positiva), 60-79 = Media-Alta (Neutra o Positiva), 40-59 = Media (Neutra), 20-39 = Baja (Negativa o Ausente), <20 = Muy Baja (Ausente). Si un modelo tiene score ≥60, NO puedes decir que "no reconoce" o "no tiene información" sobre la marca — debes reflejar reconocimiento medio-alto. El modelo con mayor score debe describirse como el que mejor reconoce la marca.
+BRAND REPUTATION: Describe cómo perciben los modelos a "{brand}" basándote EXCLUSIVAMENTE en los scores numéricos ya calculados (no en el texto literal de las respuestas, que puede ser parcial o ambiguo). El score es un indicador compuesto que refleja la visibilidad real de la marca en cada modelo. Usa esta escala OBLIGATORIA para redactar el resumen y elegir el tono:
+- Score 80-100 → tono "Positiva": el modelo conoce bien la marca, la menciona, describe atributos concretos.
+- Score 60-79  → tono "Neutra": el modelo reconoce la marca con información moderada, sin diferenciación clara.
+- Score 40-59  → tono "Neutra": el modelo tiene información muy limitada, presencia incipiente.
+- Score 20-39  → tono "Negativa": el modelo apenas reconoce la marca, menciones mínimas o confusas.
+- Score 0-19   → tono "Ausente": el modelo no reconoce la marca en absoluto.
+NUNCA uses frases como "admite no disponer de información" o "no reconoce" para modelos con score ≥60. El modelo con mayor score SIEMPRE debe describirse como el que mejor conoce la marca.
 
 KEY STRENGTHS: Fortalezas reales de "{brand}" que debería capitalizar para mejorar su GEO (basadas en su sector y lo que valoran los modelos de empresas similares).
 
