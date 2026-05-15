@@ -1288,7 +1288,7 @@ def geo_extract_citations_from_ahrefs(image_bytes: bytes) -> dict:
     return json.loads(raw)
 
 
-def geo_analyze_results(brand: str, sector: str, pais: str, scores: dict, all_responses: dict, observaciones: str = "", ahrefs_img: bytes = None) -> dict:
+def geo_analyze_results(brand: str, sector: str, pais: str, scores: dict, all_responses: dict, observaciones: str = "", ahrefs_img: bytes = None, citations: dict = None) -> dict:
     resps_text = ""
     for model, sections in all_responses.items():
         resps_text += f"\n\n=== {model} ===\n"
@@ -1301,8 +1301,17 @@ def geo_analyze_results(brand: str, sector: str, pais: str, scores: dict, all_re
 
     obs_block = f"\nOBSERVACIONES DEL CLIENTE (tenlas muy en cuenta): {observaciones.strip()}\n" if observaciones.strip() else ""
     ahrefs_block = ""
-    if ahrefs_img:
-        ahrefs_block = "\nADEMÁS se adjunta una captura de pantalla de Ahrefs AI Citations para este dominio. Extrae de ella: qué plataformas de IA citan el dominio, cuántas veces, qué páginas son las más citadas, y cualquier otro dato relevante visible. Integra esta información en el análisis, especialmente en brand_reputation, ai_search_insights y recommendations.\n"
+    if citations:
+        lines = [f"  - {model}: {n} citaciones" for model, n in citations.items() if n > 0]
+        if lines:
+            ahrefs_block = (
+                "\nDATOS REALES DE CITACIONES EN IA (fuente: herramienta de auditoría externa):\n"
+                + "\n".join(lines)
+                + "\nEstos son datos objetivos de cuántas veces citan a la marca los distintos modelos de IA. "
+                "Los scores ya reflejan estos números. Úsalos para redactar textos coherentes con la visibilidad real.\n"
+            )
+    elif ahrefs_img:
+        ahrefs_block = "\nADEMÁS se adjunta una captura con datos de citaciones de IA para este dominio. Extrae los números visibles e intégralos en el análisis.\n"
 
     client = Anthropic(api_key=ANTHROPIC_KEY)
     prompt = f"""Eres un experto en GEO (Generative Engine Optimization) redactando un informe profesional para el cliente final.
@@ -1321,7 +1330,7 @@ Scores obtenidos:
 - Claude: {scores.get('Claude', 0)}/100
 - ChatGPT: {scores.get('ChatGPT', 0)}/100
 - Gemini: {scores.get('Gemini', 0)}/100
-- Groq/Llama: {scores.get('Groq', 0)}/100
+- Groq/Llama: {scores.get('Grok', 0)}/100
 
 Respuestas de los modelos cuando se les preguntó qué empresas de {sector} recomiendan en {pais}:
 {resps_text[:4000]}
@@ -1702,22 +1711,30 @@ with tab2:
             progress_bar.empty()
 
             # Paso 3b — Sobreescribir scores con citaciones reales de Ahrefs si disponible
+            ahrefs_citations = {}
             if ahrefs_file:
                 with st.spinner("Extrayendo citaciones reales de Ahrefs AI Citations..."):
                     try:
                         ahrefs_file.seek(0)
-                        citations = geo_extract_citations_from_ahrefs(ahrefs_file.read())
+                        raw_citations = geo_extract_citations_from_ahrefs(ahrefs_file.read())
                         ahrefs_file.seek(0)
                         # Mapeo Ahrefs → modelos activos en la app
                         _ahrefs_map = {
-                            "ChatGPT": citations.get("ChatGPT", 0),
-                            "Gemini":  citations.get("Gemini", 0),
-                            "Claude":  citations.get("Claude", 0),
-                            "Grok":    max(citations.get("Perplexity", 0), citations.get("Grok", 0)),
+                            "ChatGPT": raw_citations.get("ChatGPT", 0),
+                            "Gemini":  raw_citations.get("Gemini", 0),
+                            "Claude":  raw_citations.get("Claude", 0),
+                            "Grok":    max(raw_citations.get("Perplexity", 0), raw_citations.get("Grok", 0)),
                         }
                         for model_name in list(scores.keys()):
                             if model_name in _ahrefs_map:
                                 scores[model_name] = citation_score(_ahrefs_map[model_name])
+                        # Guardar citaciones para pasarlas al análisis narrativo
+                        ahrefs_citations = {
+                            "ChatGPT":    raw_citations.get("ChatGPT", 0),
+                            "Gemini":     raw_citations.get("Gemini", 0),
+                            "Perplexity": raw_citations.get("Perplexity", 0),
+                            "Grok":       raw_citations.get("Grok", 0),
+                        }
                         st.success("✅ Scores actualizados con datos reales de Ahrefs AI Citations.")
                     except Exception as _e:
                         st.warning(f"No se pudieron extraer citaciones de Ahrefs ({_e}). Se usarán los scores del escáner.")
@@ -1757,7 +1774,7 @@ with tab2:
             with st.spinner("Claude generando el informe completo..."):
                 try:
                     ahrefs_bytes = ahrefs_file.getvalue() if ahrefs_file else None
-                    analysis = geo_analyze_results(brand, sector, pais, scores, all_responses, observaciones_t2, ahrefs_bytes)
+                    analysis = geo_analyze_results(brand, sector, pais, scores, all_responses, observaciones_t2, ahrefs_bytes, ahrefs_citations)
                     analysis["score_global"]     = score_global
                     analysis["chatgpt_score"]    = scores.get("ChatGPT", 0)
                     analysis["gemini_score"]     = scores.get("Gemini", 0)
