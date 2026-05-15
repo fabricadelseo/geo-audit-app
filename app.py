@@ -1117,17 +1117,26 @@ def geo_query_groq(prompt: str) -> str:
 
 
 def geo_mentions(brand: str, text: str) -> bool:
+    """
+    Devuelve True SOLO si la marca específica aparece mencionada en el texto.
+    Requiere que TODAS las palabras significativas (>2 chars) del nombre de marca
+    aparezcan en el texto — evita falsos positivos por palabras genéricas del sector.
+    """
     if "[ERROR" in text:
         return False
     bl = text.lower()
-    checks = [brand.lower()]
-    significant = [w for w in brand.lower().split() if len(w) > 3]
-    if significant:
-        checks.append(significant[0])
-    return any(c in bl for c in checks)
+    # Primero intenta match exacto del nombre completo
+    if brand.lower() in bl:
+        return True
+    # Si no, exige que TODAS las palabras significativas aparezcan
+    significant = [w for w in brand.lower().split() if len(w) > 2]
+    if len(significant) >= 2:
+        return all(w in bl for w in significant)
+    # Marca de una sola palabra significativa: match directo ya cubierto arriba
+    return False
 
 
-# Señales FUERTES de desconocimiento — solo frases inequívocas en la apertura de la respuesta
+# Señales de desconocimiento — se buscan en TODO el texto de la respuesta
 _STRONG_DENIAL = [
     "no conozco", "no la conozco", "no estoy familiarizado",
     "desconozco esta empresa", "no tengo conocimiento de esta",
@@ -1135,23 +1144,31 @@ _STRONG_DENIAL = [
     "no tengo información sobre esta empresa",
     "no tengo información acerca de esta empresa",
     "no tengo datos sobre esta empresa",
+    "no tengo información específica sobre esta empresa",
+    "no dispongo de información",
+    "no tengo datos suficientes sobre esta marca",
+    "no cuento con información sobre esta empresa",
+    "no puedo proporcionar información específica sobre esta empresa",
+    "sin información verificada sobre esta marca",
+    "no he encontrado información sobre esta empresa",
+    "no tengo información verificada sobre",
 ]
 
 
-def _model_knows(text: str, min_chars: int = 80) -> bool:
+def _model_knows(text: str, min_chars: int = 150) -> bool:
     """
     Devuelve True si el modelo dio una respuesta sustancial sobre la marca.
     Criterios:
-    1. Respuesta de al menos `min_chars` caracteres (respuesta real, no "no sé")
-    2. Sin negación explícita en las primeras 200 chars (apertura de la respuesta)
+    1. Respuesta de al menos `min_chars` caracteres
+    2. Sin negación de conocimiento en TODO el texto (no solo la apertura)
     """
     if not text or "[ERROR" in text:
         return False
     text = text.strip()
     if len(text) < min_chars:
         return False
-    opening = text[:200].lower()
-    return not any(sig in opening for sig in _STRONG_DENIAL)
+    full = text.lower()
+    return not any(sig in full for sig in _STRONG_DENIAL)
 
 
 def geo_score_from_sections(brand: str, sections: dict) -> int:
