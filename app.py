@@ -1175,8 +1175,8 @@ def geo_score_from_sections(brand: str, sections: dict) -> int:
     """
     Score de visibilidad GEO por modelo (0-100):
 
-    40 pts — competitors:   marca mencionada espontáneamente (pregunta genérica sin nombrarla)
-    30 pts — reputation:    modelo demuestra conocimiento real de la marca
+    20 pts — competitors:   marca mencionada espontáneamente (pregunta genérica sin nombrarla)
+    50 pts — reputation:    modelo demuestra conocimiento real de la marca
     15 pts — strengths:     modelo da fortalezas específicas (no dice "no la conozco")
     15 pts — opportunities: modelo da oportunidades específicas (no dice "no la conozco")
     """
@@ -1185,15 +1185,15 @@ def geo_score_from_sections(brand: str, sections: dict) -> int:
 
     score = 0
 
-    # 40 pts — mención espontánea en competitors
+    # 20 pts — mención espontánea en competitors
     competitors_resp = sections.get("competitors", "")
     if competitors_resp and "[ERROR" not in competitors_resp:
         if geo_mentions(brand, competitors_resp):
-            score += 40
+            score += 20
 
-    # 30 pts — conocimiento real en reputation
+    # 50 pts — conocimiento real en reputation
     if _model_knows(sections.get("reputation", "")):
-        score += 30
+        score += 50
 
     # 15 pts — fortalezas específicas
     if _model_knows(sections.get("strengths", "")):
