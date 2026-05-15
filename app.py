@@ -155,7 +155,9 @@ Devuelve EXCLUSIVAMENTE un JSON válido, sin texto antes ni después:
 
 REGLA ESTRICTA para "competitors": Localiza en la imagen la sección llamada "Top Competitors". Contiene entre 2 y 5 empresas, cada una con su nombre y una descripción en inglés. DEBES copiar literalmente los nombres y descripciones que leas en esa sección de la imagen — NO uses conocimiento externo, NO inventes competidores, NO rellenes con empresas que no estén visibles. Si la sección no está visible con claridad en la imagen, devuelve "competitors": []. Para "stars" (1-5): estima según la descripción visible — presencia fuerte/nacional = 4-5, moderada/local = 2-3. Toma únicamente los 3 primeros que aparezcan. Las descripciones tradúcelas al español.
 Si no ves un score numérico exacto, estímalo por los indicadores visuales.
-Textos en español, concretos y accionables. Priority: 1=baja, 2=media, 3=alta.\
+Textos en español, concretos y accionables. Priority: 1=baja, 2=media, 3=alta.
+
+REGLA CRÍTICA — COHERENCIA SCORES vs TEXTO: El campo "resumen" y todos los textos de análisis DEBEN ser coherentes con los scores numéricos que asignas. Escala obligatoria: ≥80 = presencia alta/amplia, 60-79 = presencia media-alta/reconocimiento notable, 40-59 = presencia media/reconocimiento parcial, 20-39 = presencia baja/menciones mínimas, <20 = sin presencia/desconocida. NUNCA escribas que un modelo "no reconoce" o "no tiene información" sobre la empresa si le has dado un score ≥60. NUNCA escribas que un modelo "reconoce" o "menciona" la empresa si le has dado un score <30. El modelo con el score más alto debe describirse siempre como el que mejor reconoce la marca; el de score más bajo, como el que menos.\
 """
 
 
