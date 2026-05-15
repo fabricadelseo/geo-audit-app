@@ -1191,16 +1191,19 @@ def geo_score_from_sections(brand: str, sections: dict) -> int:
         if geo_mentions(brand, competitors_resp):
             score += 20
 
-    # 50 pts — conocimiento real en reputation
-    if _model_knows(sections.get("reputation", "")):
+    # 50 pts — conocimiento real en reputation: respuesta sustancial Y menciona la marca
+    rep = sections.get("reputation", "")
+    if _model_knows(rep) and geo_mentions(brand, rep):
         score += 50
 
-    # 15 pts — fortalezas específicas
-    if _model_knows(sections.get("strengths", "")):
+    # 15 pts — fortalezas específicas: respuesta sustancial Y menciona la marca
+    str_ = sections.get("strengths", "")
+    if _model_knows(str_) and geo_mentions(brand, str_):
         score += 15
 
-    # 15 pts — oportunidades específicas
-    if _model_knows(sections.get("opportunities", "")):
+    # 15 pts — oportunidades específicas: respuesta sustancial Y menciona la marca
+    opp = sections.get("opportunities", "")
+    if _model_knows(opp) and geo_mentions(brand, opp):
         score += 15
 
     return min(score, 100)
